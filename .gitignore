@@ -1,0 +1,62 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Cursor local (keep shared skills)
+.cursor/*
+!.cursor/skills/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Secrets and GEE / Gemini credentials
+credentials.json
+*-service-account.json
+*.pem
+secrets/
+
+# Local downloads, model weights, pipeline products
+datasets/
+data/raw/
+output/
+*.tif
+*.tiff
+*.img
+*.nc
+*.hdf
+*.h5
+*.pth
+*.pt
+*.ckpt
+*.zip
+
+# Shapefile sidecars (prefer GeoJSON in git)
+*.shp
+*.shx
+*.dbf
+*.prj
+*.cpg
+*.sbn
+*.sbx
+
+# Generated geemap pages
+geemap.html
+*_map.html

@@ -1,0 +1,27 @@
+[project]
+name = "GEO761-GIS"
+version = "0.1.0"
+description = "UoA GEOG761 Project"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "opencv-python",
+    "earthengine-api>=1.4.0",
+    "geemap>=0.38.3",
+    "geopandas>=1.1.4",
+    "ipykernel>=7.3.0",
+    "matplotlib>=3.11.1",
+    "numpy>=2.5.1",
+    "pandas>=3.0.3",
+    "rasterio>=1.5.1",
+    "scikit-learn>=1.9.0",
+    "seaborn>=0.13.2",
+    "tensorflow>=2.21.0",
+    "tqdm>=4.70.0",
+    "scikit-image>=0.26.0",
+]
+
+[dependency-groups]
+dev = [
+    "ipykernel>=7.3.0",
+]
