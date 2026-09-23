@@ -1,4 +1,4 @@
-# Geographically Informed Speculators (GIS)
+# <img src="assets/logo/logo.png" alt="Geographically Informed Speculators logo" width="77" valign="middle"> Geographically Informed Speculators (GIS)
 
 GEOG761 group project: mapping **flood and inundation extent** after a disaster, as the entry point for choosing a sea-logistics / HA-DR site.
 
@@ -128,7 +128,13 @@ flowchart LR
 ```text
 GEOG761-GIS/
   README.md
-  assets/logo/          # team logo (to be uploaded)
+  pyproject.toml
+  assets/logo/                 # team logo
+  notebooks/                   # test each input layer in GEE / geemap
+    layer_config.py            # shared AOI, dates, GEE project
+    01_sentinel1_layer.ipynb   # Sentinel-1 VV/VH
+    02_sentinel2_layer.ipynb   # Sentinel-2 RGB / NIR / SWIR
+    03_dem_layer.ipynb         # SRTM elevation / slope
 ```
 
-Later: `ui/`, `processing/`, and `output/` when implementation starts.
+Later: `ui/`, `processing/`, and `output/` when the map UI and fusion pipeline are added.
