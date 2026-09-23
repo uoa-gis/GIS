@@ -1,5 +1,4 @@
-# ![Geographically Informed Speculators logo](assets/logo/logo.png) Geographically Informed Speculators (GIS)
-
+# <img src="assets/logo/logo.png" alt="Geographically Informed Speculators logo" width="90" valign="middle"> Geographically Informed Speculators (GIS)
 GEOG761 group project: mapping **flood and inundation extent** after a disaster, as the entry point for choosing a sea-logistics / HA-DR site.
 
 This repository is documentation-only for now. Application code (map UI, processing, Gemini report) will be added step by step.
