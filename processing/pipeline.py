@@ -38,6 +38,8 @@ class FloodRunRequest:
     center_lat: float | None = None
     center_lon: float | None = None
     half_km: float = 5.0
+    slope_max_deg: float = cfg.SLOPE_MAX_DEG
+    elevation_max_m: float = cfg.ELEVATION_MAX_M
 
     def resolved_peak(self) -> str:
         if self.peak_date:
@@ -384,7 +386,7 @@ def run_flood_mapping(
             bestEffort=True,
             maxPixels=1e9,
         ).getInfo()
-        elev_ok = dem.lt(cfg.ELEVATION_MAX_M).unmask(1).rename("elev_ok")
+        elev_ok = dem.lt(req.elevation_max_m).unmask(1).rename("elev_ok")
         if cfg.ELEVATION_ABOVE_P5_M is not None:
             p5 = dem_pct.get("elevation_p5")
             if p5 is None:
@@ -392,7 +394,7 @@ def run_flood_mapping(
             rel_max = float(p5) + cfg.ELEVATION_ABOVE_P5_M
             elev_ok = elev_ok.And(dem.lte(rel_max).unmask(1)).rename("elev_ok")
 
-        slope_ok = slope_deg.lt(cfg.SLOPE_MAX_DEG).unmask(1).rename("slope_ok")
+        slope_ok = slope_deg.lt(req.slope_max_deg).unmask(1).rename("slope_ok")
         layover_risk = slope_deg.gt(co_angle)
         shadow_risk = slope_deg.gt(ee.Image(90).subtract(co_angle))
         layover_shadow_risk = layover_risk.Or(shadow_risk).unmask(0).rename("layover_shadow_risk")
@@ -466,6 +468,8 @@ def run_flood_mapping(
             "wi_percentiles": wi_pct,
             "dem_percentiles": dem_pct,
             "flood_polygons": n_poly,
+            "slope_max_deg": req.slope_max_deg,
+            "elevation_max_m": req.elevation_max_m,
             "notebook_equivalent": "notebooks/01_sentinel1_layer.ipynb",
         }
         return FloodRunResult(ok=True, stats=stats, figure_png_base64=figure_b64, meta=meta, report=None)

@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from processing import defaults as cfg
 from processing.pipeline import FloodRunRequest, run_flood_mapping
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -46,6 +47,8 @@ class RunBody(BaseModel):
     center_lat: float | None = None
     center_lon: float | None = None
     half_km: float = 5.0
+    slope_max_deg: float = Field(default=cfg.SLOPE_MAX_DEG, ge=0)
+    elevation_max_m: float = Field(default=cfg.ELEVATION_MAX_M, ge=0)
 
 
 def _worker(job_id: str, body: RunBody) -> None:
@@ -70,6 +73,8 @@ def _worker(job_id: str, body: RunBody) -> None:
                 center_lat=body.center_lat,
                 center_lon=body.center_lon,
                 half_km=body.half_km,
+                slope_max_deg=body.slope_max_deg,
+                elevation_max_m=body.elevation_max_m,
             ),
             progress=on_progress,
         )
@@ -98,6 +103,15 @@ def team_logo() -> FileResponse:
         if path.is_file():
             return FileResponse(path)
     raise HTTPException(status_code=404, detail="No logo file.")
+
+
+@app.get("/api/defaults")
+def ui_defaults() -> dict[str, float]:
+    """Defaults shown in the form (from processing/defaults.py)."""
+    return {
+        "slope_max_deg": float(cfg.SLOPE_MAX_DEG),
+        "elevation_max_m": float(cfg.ELEVATION_MAX_M),
+    }
 
 
 @app.post("/api/run")

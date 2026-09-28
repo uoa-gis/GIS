@@ -1,4 +1,5 @@
-# <img src="assets/logo/logo.png" alt="Geographically Informed Speculators logo" width="90" valign="middle"> Geographically Informed Speculators (GIS)
+# ![Geographically Informed Speculators logo](assets/logo/logo.png) Geographically Informed Speculators (GIS)
+
 GEOG761 group project: mapping **flood and inundation extent** after a disaster, as the entry point for choosing a sea-logistics / HA-DR site.
 
 The Sentinel-1 notebook remains the lab-style reference. The map UI runs the **same flood flow** from calendar dates and a Leaflet AOI, without editing `layer_config.py` for coordinates or dates.
@@ -20,21 +21,21 @@ Selecting a suitable site for logistics supply from sea, immediately following a
 
 ---
 
-
-
 ## Observation and method
 
 **Mapping flood extent with Sentinel-1** (`notebooks/01_sentinel1_layer.ipynb` or `processing/pipeline.py`). Notebook AOI/dates still live in `notebooks/layer_config.py`. The UI does not use those date/coordinate fields; it sends them over HTTP. Thresholds in `processing/defaults.py` match the notebook.
 
 **Inputs**
 
-| Input | Collection / product | Role |
-|---|---|---|
-| Sentinel-1 GRD IW VV + VH + `angle` | `COPERNICUS/S1_GRD` (descending, 10 m) over `START_DATE`–`END_DATE` | Event SAR (no pre-event stack) |
-| Copernicus DEM GLO-30 | `COPERNICUS/DEM/GLO30` | Elevation, slope, sea (nodata) |
-| ESA WorldCover 2021 | `ESA/WorldCover/v200/2021` | Permanent water (class 80); optional dark-land classes 50/60 (runways) |
-| JRC Global Surface Water | `JRC/GSW1_4/GlobalSurfaceWater` `occurrence` | Permanent / frequent water |
-| Sentinel-2 RGB (optional figure) | `COPERNICUS/S2_SR_HARMONIZED` | Side-by-side RGB vs flood boundary |
+
+| Input                               | Collection / product                                                | Role                                                                   |
+| ----------------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Sentinel-1 GRD IW VV + VH + `angle` | `COPERNICUS/S1_GRD` (descending, 10 m) over `START_DATE`–`END_DATE` | Event SAR (no pre-event stack)                                         |
+| Copernicus DEM GLO-30               | `COPERNICUS/DEM/GLO30`                                              | Elevation, slope, sea (nodata)                                         |
+| ESA WorldCover 2021                 | `ESA/WorldCover/v200/2021`                                          | Permanent water (class 80); optional dark-land classes 50/60 (runways) |
+| JRC Global Surface Water            | `JRC/GSW1_4/GlobalSurfaceWater` `occurrence`                        | Permanent / frequent water                                             |
+| Sentinel-2 RGB (optional figure)    | `COPERNICUS/S2_SR_HARMONIZED`                                       | Side-by-side RGB vs flood boundary                                     |
+
 
 **How a pixel becomes flood**
 
@@ -50,8 +51,6 @@ SAR is used because it works through cloud (storms/cyclones). Sentinel-2 is a se
 **Honesty:** Lecture 6 maps land vs water with **Random Forest on VV/VH**, not a water-index cut. WI + Otsu + a dB cap is a **project choice**. There is no pre/post SAR difference layer in this notebook; inundation is event water minus a land-cover / JRC baseline on low, flat ground.
 
 ---
-
-
 
 ## Draft architecture
 
@@ -120,11 +119,9 @@ flowchart TD
 
 ---
 
-
-
 ## Map UI
 
-A local FastAPI page (`ui/`) plus Leaflet. Dates and AOI are chosen in the browser; processing thresholds stay in `processing/defaults.py`. The notebook is **not** executed or modified.
+A local FastAPI page (`ui/`) plus Leaflet. Dates, AOI, max slope, and max elevation are chosen in the browser. Other processing thresholds stay in `processing/defaults.py`. The notebook is **not** executed or modified.
 
 ### Design
 
@@ -142,6 +139,9 @@ Dark layout, gold accent. Team name **Geographically Informed Speculators** in t
 │ Area of interest │                                          │
 │  half-width km   │                                          │
 │  AOI text        │                                          │
+│ Terrain filters  │                                          │
+│  max slope (deg) │                                          │
+│  max elev (m)    │                                          │
 │  [Run flood…]    │                                          │
 │  progress bar    │                                          │
 │  step + elapsed  │                                          │
@@ -151,14 +151,33 @@ Dark layout, gold accent. Team name **Geographically Informed Speculators** in t
 └─────────────────────────────────────────────────────────────┘
 ```
 
-| Region | What it does |
-|---|---|
-| Header | Team name and optional logo |
-| Left panel | Native date pickers (start, end, optional peak; default peak is the window midpoint). Half-width (km) for click-to-centre mode. Run button. Live **progress** under the button: bar, `Step n/10: …`, elapsed time |
-| Map | OpenStreetMap. **Click** places a gold rectangle of ± half-width km. Leaflet.draw **rectangle** tool for a custom box. Selected bounds are shown as text |
-| Results | Same two-panel figure as the last cells of `01_sentinel1_layer.ipynb`, then area stats + meta as JSON |
 
-Defaults match Cyclone Gabrielle at Hawke’s Bay Airport: 2023-02-01 → 2023-02-25, peak 2023-02-15, 5 km half-width, map centred at about `[-39.471, 176.869]`.
+| Region     | What it does                                                                                                                                                                                                                                                                                                       |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Header     | Team name and optional logo                                                                                                                                                                                                                                                                                        |
+| Left panel | Native date pickers (start, end, optional peak; default peak is the window midpoint). Half-width (km) for click-to-centre mode. **Max slope (°)** and **max elevation (m)** (defaults `SLOPE_MAX_DEG=10`, `ELEVATION_MAX_M=25`). Run button. Live **progress** under the button: bar, `Step n/10: …`, elapsed time |
+| Map        | OpenStreetMap. **Click** places a gold rectangle of ± half-width km. Leaflet.draw **rectangle** tool for a custom box. Selected bounds are shown as text                                                                                                                                                           |
+| Results    | Same two-panel figure as the last cells of `01_sentinel1_layer.ipynb`, then area stats + meta as JSON                                                                                                                                                                                                              |
+
+
+Defaults match Cyclone Gabrielle at Hawke’s Bay Airport: 2023-02-01 → 2023-02-25, peak 2023-02-15, 5 km half-width, map centred at about `[-39.471, 176.869]`. Terrain defaults are **10°** max slope and **25 m** max elevation (`GET /api/defaults` loads these from `processing/defaults.py`).
+
+### UI parameters
+
+These controls are sent with `POST /api/run`. They replace the notebook’s `START_DATE` / `END_DATE` / `MAP_CENTER` / `AOI_RADIUS_KM` / `SLOPE_MAX_DEG` / `ELEVATION_MAX_M`. Other thresholds (`WATER_INDEX_MAX_DB`, `ELEVATION_ABOVE_P5_M`, MMU, and so on) stay in `processing/defaults.py`.
+
+
+| Control           | JSON field                       | Default                               | Role                                                                                                                                      |
+| ----------------- | -------------------------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Start             | `start_date`                     | 2023-02-01                            | Inclusive start of the Sentinel-1 (and Sentinel-2 RGB) event window                                                                       |
+| End               | `end_date`                       | 2023-02-25                            | Exclusive-style end of that window (must be after start). SAR scenes in this range are composited                                         |
+| Peak              | `peak_date`                      | 2023-02-15                            | Date used to pick the closest Sentinel-1 scene for metadata. If empty, the midpoint of start–end is used                                  |
+| Map click         | `center_lat`, `center_lon`       | none (click required unless you draw) | Centre of an axis-aligned rectangle. Builds the AOI together with half-width                                                              |
+| Half-width (km)   | `half_km`                        | 5                                     | Distance north/south/east/west from the click. Only used in click-to-centre mode (same idea as notebook `AOI_RADIUS_KM`)                  |
+| Draw rectangle    | `west`, `south`, `east`, `north` | none                                  | Custom AOI box. If you draw, these bounds are used and half-width is ignored                                                              |
+| Max slope (deg)   | `slope_max_deg`                  | 10                                    | Drop flood candidates on slopes **≥** this (steep ground is flood-implausible and layover/shadow-prone)                                   |
+| Max elevation (m) | `elevation_max_m`                | 25                                    | Drop flood candidates at or above this Copernicus DEM height. A second relative cap (`ELEVATION_ABOVE_P5_M`) still applies in the backend |
+
 
 **Progress steps (shown under the button):** (1) initialise Earth Engine, (2) search Sentinel-1, (3) Sentinel-2 RGB, (4) DEM / WorldCover / JRC, (5) Lee + terrain flatten, (6) water index + Otsu, (7) elevation / slope / layover masks, (8) vectorise flood polygons, (9) area statistics, (10) render figure. Earth Engine is lazy, so the bar can sit on steps 6, 7 and 9 for a while. Only **one** run at a time; a second job waits.
 
@@ -185,7 +204,7 @@ uv sync
 uv run uvicorn ui.app:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Open **http://127.0.0.1:8000**
+Open **[http://127.0.0.1:8000](http://127.0.0.1:8000)**
 
 1. Set start / end / peak on the calendars (or keep the Gabrielle defaults).
 2. Click the map, or draw a rectangle.
@@ -195,8 +214,6 @@ Open **http://127.0.0.1:8000**
 Jobs usually take **several minutes**. `--reload` picks up Python changes; refresh the browser for HTML/CSS/JS. API: `POST /api/run` then poll `GET /api/job/{job_id}` (status, progress, result).
 
 ---
-
-
 
 ## Expected product and risks
 
@@ -210,8 +227,6 @@ Jobs usually take **several minutes**. `--reload` picks up Python changes; refre
 **Risks:** revisit rate, training data, compute limits.
 
 ---
-
-
 
 ## Course mapping
 
@@ -231,8 +246,6 @@ Jobs usually take **several minutes**. `--reload` picks up Python changes; refre
 
 ---
 
-
-
 ## Repository layout
 
 ```text
@@ -251,3 +264,4 @@ GEOG761-GIS/
     app.py
     static/
 ```
+

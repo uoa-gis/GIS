@@ -97,7 +97,15 @@ function payload() {
     end_date: document.getElementById("endDate").value,
     peak_date: document.getElementById("peakDate").value || null,
     half_km: Number(document.getElementById("halfKm").value) || 5,
+    slope_max_deg: Number(document.getElementById("slopeMaxDeg").value),
+    elevation_max_m: Number(document.getElementById("elevationMaxM").value),
   };
+  if (!Number.isFinite(body.slope_max_deg) || body.slope_max_deg < 0) {
+    throw new Error("Max slope (deg) must be a number ≥ 0.");
+  }
+  if (!Number.isFinite(body.elevation_max_m) || body.elevation_max_m < 0) {
+    throw new Error("Max elevation (m) must be a number ≥ 0.");
+  }
   if (mode === "draw" && drawnBounds) {
     body.west = drawnBounds.getWest();
     body.south = drawnBounds.getSouth();
@@ -194,3 +202,12 @@ document.getElementById("runBtn").addEventListener("click", async () => {
 });
 
 setAoiText();
+
+fetch("/api/defaults")
+  .then((res) => (res.ok ? res.json() : null))
+  .then((defaults) => {
+    if (!defaults) return;
+    document.getElementById("slopeMaxDeg").value = defaults.slope_max_deg;
+    document.getElementById("elevationMaxM").value = defaults.elevation_max_m;
+  })
+  .catch(() => {});
