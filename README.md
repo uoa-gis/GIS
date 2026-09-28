@@ -24,18 +24,30 @@ Selecting a suitable site for logistics supply from sea, immediately following a
 
 ## Observation and method
 
-**Mapping flood extents using Sentinel-1**
+**Mapping flood extent with Sentinel-1** (`notebooks/01_sentinel1_layer.ipynb`). AOI, dates, and thresholds live in `notebooks/layer_config.py`.
 
-1. Sentinel-1 SAR before and after the event → difference
-2. Change in backscatter → threshold / classify
-3. Separate water from land → inundation extent
-4. Newly flooded area
+**Inputs**
 
-- SAR penetrates cloud, making it reliable during storm and cyclone events when optical imagery is often unusable.
-- Water gives a consistent radar response anywhere, so the method should generalise rather than overfit to one site.
-- Sentinel-2 may be added as a secondary layer where imagery is clear.
+| Input | Collection / product | Role |
+|---|---|---|
+| Sentinel-1 GRD IW VV + VH + `angle` | `COPERNICUS/S1_GRD` (descending, 10 m) over `START_DATE`–`END_DATE` | Event SAR (no pre-event stack) |
+| Copernicus DEM GLO-30 | `COPERNICUS/DEM/GLO30` | Elevation, slope, sea (nodata) |
+| ESA WorldCover 2021 | `ESA/WorldCover/v200/2021` | Permanent water (class 80); optional dark-land classes 50/60 (runways) |
+| JRC Global Surface Water | `JRC/GSW1_4/GlobalSurfaceWater` `occurrence` | Permanent / frequent water |
+| Sentinel-2 RGB (optional figure) | `COPERNICUS/S2_SR_HARMONIZED` | Side-by-side RGB vs flood boundary |
 
-Course water-detection methods (thresholds and/or Random Forest / Lab 5 U-Net) are applied to Sentinel-1 and Sentinel-2, then constrained with a DEM.
+**How a pixel becomes flood**
+
+1. **Prep** — clip to a rectangular AOI; convert dB → linear power; Lee speckle filter; simplified cosine terrain flatten; back to dB.
+2. **Event water** — dual-pol index `WI = VV_dB + VH_dB`. Water if `WI < Otsu(WI)` **and** `WI < WATER_INDEX_MAX_DB`.
+3. **Not permanent** — drop WorldCover 80, JRC occurrence ≥ threshold, and DEM nodata (open sea). Optionally drop WorldCover 50/60.
+4. **Terrain** — drop high ground (`ELEVATION_MAX_M` and optional height above AOI DEM p5) and slopes steeper than `SLOPE_MAX_DEG`; layover/shadow *risk proxy* from slope vs incidence angle.
+5. **Clean** — minimum mapping unit, then a small morphological opening.
+6. **Output** — flood raster, boundary polygons, area stats, RGB comparison figure.
+
+SAR is used because it works through cloud (storms/cyclones). Sentinel-2 is a secondary optical check, not the primary flood classifier.
+
+**Honesty:** Lecture 6 maps land vs water with **Random Forest on VV/VH**, not a water-index cut. WI + Otsu + a dB cap is a **project choice**. There is no pre/post SAR difference layer in this notebook; inundation is event water minus a land-cover / JRC baseline on low, flat ground.
 
 ---
 
@@ -43,47 +55,66 @@ Course water-detection methods (thresholds and/or Random Forest / Lab 5 U-Net) a
 
 ## Draft architecture
 
+Current code path is `01_sentinel1_layer.ipynb` (config in `layer_config.py`). Sentinel-2 is only used for the RGB comparison figure, not for classifying flood.
+
 ```mermaid
-flowchart LR
+flowchart TD
   subgraph IN["Inputs"]
-    S1["Sentinel-1 SAR VV/VH"]
-    S2["Sentinel-2 RGB NIR SWIR"]
-    DEM["DEM elevation / slope"]
+    S1["Sentinel-1 GRD IW VV/VH/angle"]
+    DEM["Copernicus GLO-30 DEM"]
+    WC["WorldCover 2021"]
+    JRC["JRC GSW occurrence"]
+    S2["Sentinel-2 RGB optional"]
   end
-  subgraph PRE["Prep GEE geemap"]
-    A["Clip AOI cloud mask speckle"]
+  subgraph PRE["Prep"]
+    CLIP["Clip rectangular AOI"]
+    LEE["dB to linear / Lee speckle / cosine flatten / dB"]
   end
-  subgraph AI["Course models"]
-    B["S1 RF land vs water"]
-    C["S2 NDWI or U-Net"]
-    D["DEM keep low flat pixels"]
+  subgraph WTR["Event water"]
+    WI["WI = VV_dB + VH_dB"]
+    OTSU["Otsu on WI"]
+    CAP["WI less than WATER_INDEX_MAX_DB"]
+    EW["event_water = Otsu AND cap"]
   end
-  subgraph Fusion["Fusion"]
-    E["Flood water minus permanent on low ground"]
+  subgraph MASK["Subtract and terrain"]
+    PERM["permanent = WC 80 OR JRC OR DEM nodata sea"]
+    DARK["optional WC 50/60 dark land"]
+    CAND["flood_candidate = event_water minus permanent minus dark land"]
+    ELEV["elev_ok: below ELEVATION_MAX_M and p5 plus delta"]
+    SLP["slope_ok: below SLOPE_MAX_DEG"]
+    LAY["layover/shadow risk proxy"]
+    MMU["MMU then morphological opening"]
   end
   subgraph OUT["Outputs"]
-    M["Map UI geemap"]
-    R["Short report"]
-    L["Gemini LLM one-page text"]
+    FF["final_flood raster"]
+    POLY["flood_boundary polygons"]
+    STAT["area statistics"]
+    MAP["geemap + RGB vs boundary figure"]
   end
-  S1 --> A
-  S2 --> A
-  DEM --> A
-  A --> B
-  A --> C
-  A --> D
-  B --> E
-  C --> E
-  D --> E
-  E --> M
-  E --> R
-  E --> L
-  L --> R
+  S1 --> CLIP --> LEE --> WI
+  WI --> OTSU --> EW
+  WI --> CAP --> EW
+  WC --> PERM
+  JRC --> PERM
+  DEM --> PERM
+  WC --> DARK
+  EW --> CAND
+  PERM --> CAND
+  DARK --> CAND
+  DEM --> ELEV
+  DEM --> SLP
+  S1 --> LAY
+  CAND --> ELEV --> SLP --> LAY --> MMU --> FF
+  FF --> POLY
+  FF --> STAT
+  S2 --> MAP
+  FF --> MAP
+  POLY --> MAP
 ```
 
 
 
-**Logical proposition:** flood = Sentinel-1 and/or Sentinel-2 water, minus permanent water, on low / flat ground.
+**Logical proposition:** flood = event Sentinel-1 water (WI ∩ Otsu ∩ dB cap), minus permanent water, on low / flat ground.
 
 **Event trigger (pitch context):** MetService / news. Implementation will start from a user-selected AOI and date range rather than a live alert feed.
 
@@ -107,7 +138,7 @@ flowchart LR
 
 **Product**
 
-- A map of flood and inundation extent for a chosen area and date range, produced from before and after Sentinel-1 imagery.
+- A map of flood and inundation extent for a chosen AOI and **event** date range, from Sentinel-1 (optional Sentinel-2 RGB for context).
 - A notebook or GitHub repository containing the code.
 - Run on past flood events to show the method works.
 - A partner can adapt it to their own SAR data.
@@ -132,7 +163,7 @@ flowchart LR
 | Fusion overlay                                                   | Project novelty                               |
 
 
-**Honesty line:** Lecture 6 classifies land vs water with **Random Forest on VV/VH**, not a fixed SAR dB threshold. A backscatter threshold, if used, is a project choice. Water is dark in calm SAR; wind and speckle are why the lecture does not treat water as one dB cutoff.
+**Honesty line:** Lecture 6 classifies land vs water with **Random Forest on VV/VH**. This project's S1 notebook uses a **VV+VH water index**, **Otsu**, and a **fixed dB cap** (AND), then WorldCover/JRC/DEM filters. That threshold path is a project choice, not the lecture classifier.
 
 ---
 
@@ -147,9 +178,9 @@ GEOG761-GIS/
   assets/logo/                 # team logo
   notebooks/                   # test each input layer in GEE / geemap
     layer_config.py            # shared AOI, dates, GEE project
-    01_sentinel1_layer.ipynb   # Sentinel-1 VV/VH
+    01_sentinel1_layer.ipynb   # S1 flood: WI + Otsu, WorldCover/JRC/DEM filters
     02_sentinel2_layer.ipynb   # Sentinel-2 RGB / NIR / SWIR
-    03_dem_layer.ipynb         # SRTM elevation / slope
+    03_dem_layer.ipynb         # DEM elevation / slope (lab-style SRTM test)
 ```
 
 Later: `ui/`, `processing/`, and `output/` when the map UI and fusion pipeline are added.
