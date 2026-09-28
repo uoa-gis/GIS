@@ -1,7 +1,7 @@
 # <img src="assets/logo/logo.png" alt="Geographically Informed Speculators logo" width="90" valign="middle"> Geographically Informed Speculators (GIS)
 GEOG761 group project: mapping **flood and inundation extent** after a disaster, as the entry point for choosing a sea-logistics / HA-DR site.
 
-This repository is documentation-only for now. Application code (map UI, processing, Gemini report) will be added step by step.
+The Sentinel-1 notebook maps flood extent. A separate Gemini module (`llm/report.py`) turns the last figure and stats into a short report. The map UI will be added later.
 
 ---
 
@@ -128,7 +128,7 @@ flowchart TD
 - Input: select an area of interest (AOI) on the map.
 - Processing module: clip, cloud mask, speckle filter, course models, fusion.
 - Output on the same UI: geemap flood polygon / layers, plus a short report.
-- **Gemini** turns map stats into one page of explainable text.
+- **Gemini** turns the comparison figure plus area stats into an **HTML** briefing (`llm/report.py`; key in `.env` as `GEMINI_KEY`).
 
 ---
 
@@ -175,12 +175,17 @@ flowchart TD
 GEOG761-GIS/
   README.md
   pyproject.toml
+  .env.example                 # GEMINI_KEY placeholder (real key stays in .env)
   assets/logo/                 # team logo
-  notebooks/                   # test each input layer in GEE / geemap
-    layer_config.py            # shared AOI, dates, GEE project
-    01_sentinel1_layer.ipynb   # S1 flood: WI + Otsu, WorldCover/JRC/DEM filters
-    02_sentinel2_layer.ipynb   # Sentinel-2 RGB / NIR / SWIR
-    03_dem_layer.ipynb         # DEM elevation / slope (lab-style SRTM test)
+  llm/                         # Gemini report from figure + stats (not in the notebook)
+    report.py
+  notebooks/
+    layer_config.py
+    01_sentinel1_layer.ipynb   # last cells: figure, stats, then llm.generate_flood_report
+    02_sentinel2_layer.ipynb
+    03_dem_layer.ipynb
 ```
+
+Copy `.env.example` to `.env` and set `GEMINI_KEY`. After the two-panel figure cell, run the LLM report cell (needs `fig` and `stats` in memory). The report is **HTML** (comparison figure embedded). Optional: `GEMINI_MODEL` (default `gemini-2.5-flash`).
 
 Later: `ui/`, `processing/`, and `output/` when the map UI and fusion pipeline are added.
