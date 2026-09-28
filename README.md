@@ -1,7 +1,7 @@
 # <img src="assets/logo/logo.png" alt="Geographically Informed Speculators logo" width="90" valign="middle"> Geographically Informed Speculators (GIS)
 GEOG761 group project: mapping **flood and inundation extent** after a disaster, as the entry point for choosing a sea-logistics / HA-DR site.
 
-This repository is documentation-only for now. Application code (map UI, processing, Gemini report) will be added step by step.
+The Sentinel-1 notebook remains the lab-style reference. The map UI runs the **same flood flow** from calendar dates and a Leaflet AOI, without editing `layer_config.py` for coordinates or dates.
 
 ---
 
@@ -24,7 +24,7 @@ Selecting a suitable site for logistics supply from sea, immediately following a
 
 ## Observation and method
 
-**Mapping flood extent with Sentinel-1** (`notebooks/01_sentinel1_layer.ipynb`). AOI, dates, and thresholds live in `notebooks/layer_config.py`.
+**Mapping flood extent with Sentinel-1** (`notebooks/01_sentinel1_layer.ipynb` or `processing/pipeline.py`). Notebook AOI/dates still live in `notebooks/layer_config.py`. The UI does not use those date/coordinate fields; it sends them over HTTP. Thresholds in `processing/defaults.py` match the notebook.
 
 **Inputs**
 
@@ -55,7 +55,7 @@ SAR is used because it works through cloud (storms/cyclones). Sentinel-2 is a se
 
 ## Draft architecture
 
-Current code path is `01_sentinel1_layer.ipynb` (config in `layer_config.py`). Sentinel-2 is only used for the RGB comparison figure, not for classifying flood.
+The notebook (`01_sentinel1_layer.ipynb`) is the lab-style reference. The map UI runs the same flood flow in `processing/pipeline.py`. Sentinel-2 is only used for the RGB comparison figure, not for classifying flood.
 
 ```mermaid
 flowchart TD
@@ -122,13 +122,77 @@ flowchart TD
 
 
 
-## Planned UI (not implemented yet)
+## Map UI
 
-- Team name **Geographically Informed Speculators** and logo at the top of the page. Drop the logo in `[assets/logo/](assets/logo/)` (see that folder’s README).
-- Input: select an area of interest (AOI) on the map.
-- Processing module: clip, cloud mask, speckle filter, course models, fusion.
-- Output on the same UI: geemap flood polygon / layers, plus a short report.
-- **Gemini** turns map stats into one page of explainable text.
+A local FastAPI page (`ui/`) plus Leaflet. Dates and AOI are chosen in the browser; processing thresholds stay in `processing/defaults.py`. The notebook is **not** executed or modified.
+
+### Design
+
+Dark layout, gold accent. Team name **Geographically Informed Speculators** in the header. Optional logo at `ui/static/logo.png` or `assets/logo/logo.png` (missing image is hidden).
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│  [logo]  Geographically Informed Speculators                │
+│          Sentinel-1 flood / inundation extent · GEOG761     │
+├──────────────────┬──────────────────────────────────────────┤
+│ Event window     │                                          │
+│  start / end /   │           Leaflet map                    │
+│  peak (calendar) │   click = centred rectangle              │
+│                  │   draw tool = custom box                 │
+│ Area of interest │                                          │
+│  half-width km   │                                          │
+│  AOI text        │                                          │
+│  [Run flood…]    │                                          │
+│  progress bar    │                                          │
+│  step + elapsed  │                                          │
+├──────────────────┴──────────────────────────────────────────┤
+│ Figure — two-panel PNG (S2 RGB vs flood outline)            │
+│ Stats  — JSON (areas, meta; report is null for now)         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+| Region | What it does |
+|---|---|
+| Header | Team name and optional logo |
+| Left panel | Native date pickers (start, end, optional peak; default peak is the window midpoint). Half-width (km) for click-to-centre mode. Run button. Live **progress** under the button: bar, `Step n/10: …`, elapsed time |
+| Map | OpenStreetMap. **Click** places a gold rectangle of ± half-width km. Leaflet.draw **rectangle** tool for a custom box. Selected bounds are shown as text |
+| Results | Same two-panel figure as the last cells of `01_sentinel1_layer.ipynb`, then area stats + meta as JSON |
+
+Defaults match Cyclone Gabrielle at Hawke’s Bay Airport: 2023-02-01 → 2023-02-25, peak 2023-02-15, 5 km half-width, map centred at about `[-39.471, 176.869]`.
+
+**Progress steps (shown under the button):** (1) initialise Earth Engine, (2) search Sentinel-1, (3) Sentinel-2 RGB, (4) DEM / WorldCover / JRC, (5) Lee + terrain flatten, (6) water index + Otsu, (7) elevation / slope / layover masks, (8) vectorise flood polygons, (9) area statistics, (10) render figure. Earth Engine is lazy, so the bar can sit on steps 6, 7 and 9 for a while. Only **one** run at a time; a second job waits.
+
+**Later:** POST the figure (PNG base64) and stats JSON to Anthropic (Claude) and fill `report`. That field is currently `null`.
+
+### How to run
+
+**Prerequisites**
+
+- Python ≥ 3.13 and [uv](https://docs.astral.sh/uv/)
+- A Google Earth Engine Cloud project you can use, and a one-time local login:
+
+```bash
+uv run earthengine authenticate
+```
+
+**Start the server** (from the repo root):
+
+```bash
+# Optional; default is geog761-dongwook (see .env.example)
+export EE_PROJECT=geog761-dongwook
+
+uv sync
+uv run uvicorn ui.app:app --reload --host 127.0.0.1 --port 8000
+```
+
+Open **http://127.0.0.1:8000**
+
+1. Set start / end / peak on the calendars (or keep the Gabrielle defaults).
+2. Click the map, or draw a rectangle.
+3. Click **Run flood mapping**.
+4. Watch the progress box until the figure and stats appear below.
+
+Jobs usually take **several minutes**. `--reload` picks up Python changes; refresh the browser for HTML/CSS/JS. API: `POST /api/run` then poll `GET /api/job/{job_id}` (status, progress, result).
 
 ---
 
@@ -175,12 +239,15 @@ flowchart TD
 GEOG761-GIS/
   README.md
   pyproject.toml
-  assets/logo/                 # team logo
-  notebooks/                   # test each input layer in GEE / geemap
-    layer_config.py            # shared AOI, dates, GEE project
-    01_sentinel1_layer.ipynb   # S1 flood: WI + Otsu, WorldCover/JRC/DEM filters
-    02_sentinel2_layer.ipynb   # Sentinel-2 RGB / NIR / SWIR
-    03_dem_layer.ipynb         # DEM elevation / slope (lab-style SRTM test)
+  .env.example                 # EE_PROJECT
+  assets/logo/                 # team logo (optional)
+  notebooks/                   # GEE / geemap layer tests (unchanged for the UI)
+    layer_config.py            # notebook AOI, dates, thresholds
+    01_sentinel1_layer.ipynb   # S1 flood reference notebook
+    02_sentinel2_layer.ipynb
+    03_dem_layer.ipynb
+  processing/                  # UI backend: same S1 flood flow as 01_
+  ui/                          # FastAPI + Leaflet calendar / map
+    app.py
+    static/
 ```
-
-Later: `ui/`, `processing/`, and `output/` when the map UI and fusion pipeline are added.
