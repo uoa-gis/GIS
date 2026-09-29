@@ -7,10 +7,45 @@ from __future__ import annotations
 
 import io
 import math
+import re
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Callable
 from urllib.request import urlopen
+
+
+def s1_index_datetime(system_index: str | None) -> str:
+    """Parse acquisition start from a COPERNICUS/S1_GRD ``system:index``.
+
+    Example: ``S1A_IW_GRDH_1SDV_20230220T172223_20230220T172248_...``
+    → ``2023-02-20 17:22:23 UTC``.
+    """
+    if not system_index:
+        return "unknown"
+    match = re.search(r"_(\d{8}T\d{6})_", system_index)
+    if not match:
+        return str(system_index)
+    raw = match.group(1)
+    return f"{raw[:4]}-{raw[4:6]}-{raw[6:8]} {raw[9:11]}:{raw[11:13]}:{raw[13:15]} UTC"
+
+
+WI_VIS = {"min": -50, "max": -10, "palette": ["#08306b", "#41b6c4", "#ffffcc"]}
+VV_VIS = {"min": -20, "max": 0, "palette": ["#000000", "#ffffff"]}
+# ESA WorldCover v200 class code, legend label, hex colour.
+WC_CLASSES: list[tuple[int, str, str]] = [
+    (10, "Tree cover", "#006400"),
+    (20, "Shrubland", "#ffbb22"),
+    (30, "Grassland", "#ffff4c"),
+    (40, "Cropland", "#f096ff"),
+    (50, "Built-up", "#fa0000"),
+    (60, "Bare / sparse", "#b4b4b4"),
+    (70, "Snow / ice", "#f0f0f0"),
+    (80, "Permanent water", "#0064c8"),
+    (90, "Herbaceous wetland", "#0096a0"),
+    (95, "Mangroves", "#00cf75"),
+    (100, "Moss / lichen", "#fae6a0"),
+]
+FLOOD_COLOR = "#ffff00"
 
 import ee
 import matplotlib
@@ -195,6 +230,124 @@ def _area_km2(mask_img: ee.Image, aoi: ee.Geometry) -> float:
     return 0.0 if val is None else float(val)
 
 
+def _worldcover_rgb(worldcover: ee.Image) -> ee.Image:
+    """Discrete WorldCover colours so the legend matches the thumbnail."""
+    codes = [row[0] for row in WC_CLASSES]
+    palette = [row[2] for row in WC_CLASSES]
+    indexed = worldcover.remap(codes, list(range(len(codes))), 0)
+    return indexed.visualize(min=0, max=len(codes) - 1, palette=palette)
+
+
+def _nice_scale_km(width_km: float) -> float:
+    target = max(width_km * 0.22, 0.5)
+    candidates = (0.5, 1, 2, 5, 10, 20, 50)
+    chosen = candidates[0]
+    for value in candidates:
+        if value <= target:
+            chosen = value
+    return chosen
+
+
+def _add_scale_bar(ax, width_km: float) -> None:
+    """Draw a scale bar in the lower-left using image pixel coordinates."""
+    import matplotlib.patheffects as pe
+    from matplotlib.patches import Rectangle
+
+    img = ax.get_images()[0]
+    height_px, width_px = img.get_array().shape[:2]
+    scale_km = _nice_scale_km(width_km)
+    bar_px = scale_km / width_km * width_px
+    # imshow puts row 0 at the top, so "lower" means a large y value.
+    bar_h = max(height_px * 0.012, 4)
+    x0, y0 = width_px * 0.06, height_px * 0.92 - bar_h
+    ax.add_patch(
+        Rectangle(
+            (x0, y0),
+            bar_px,
+            bar_h,
+            transform=ax.transData,
+            facecolor="white",
+            edgecolor="black",
+            linewidth=1.4,
+            zorder=5,
+        )
+    )
+    ax.text(
+        x0 + bar_px / 2,
+        y0 - height_px * 0.01,
+        f"{scale_km:g} km",
+        ha="center",
+        va="bottom",
+        fontsize=8,
+        color="white",
+        zorder=6,
+        path_effects=[pe.withStroke(linewidth=3, foreground="black")],
+    )
+
+
+def _add_north_arrow(ax) -> None:
+    """White north arrow with a black halo so it reads on dark SAR."""
+    import matplotlib.patheffects as pe
+
+    halo = [pe.withStroke(linewidth=3.5, foreground="black")]
+    ax.annotate(
+        "N",
+        xy=(0.93, 0.92),
+        xytext=(0.93, 0.76),
+        xycoords="axes fraction",
+        textcoords="axes fraction",
+        ha="center",
+        va="center",
+        fontsize=10,
+        fontweight="bold",
+        color="white",
+        path_effects=halo,
+        arrowprops=dict(
+            arrowstyle="-|>",
+            color="white",
+            lw=2.2,
+            mutation_scale=14,
+        ),
+        zorder=6,
+    )
+    # Outline the arrow shaft (annotate arrowprops ignore path_effects).
+    ax.annotate(
+        "",
+        xy=(0.93, 0.92),
+        xytext=(0.93, 0.76),
+        xycoords="axes fraction",
+        textcoords="axes fraction",
+        arrowprops=dict(
+            arrowstyle="-|>",
+            color="black",
+            lw=4.2,
+            mutation_scale=16,
+        ),
+        zorder=5,
+    )
+
+
+def _add_landcover_legend(ax) -> None:
+    from matplotlib.patches import Patch
+
+    handles = [
+        Patch(facecolor=color, edgecolor="0.2", linewidth=0.4, label=label)
+        for _, label, color in WC_CLASSES
+    ]
+    handles.append(
+        Patch(facecolor=FLOOD_COLOR, edgecolor="0.2", linewidth=0.4, label="Final flood")
+    )
+    ax.legend(
+        handles=handles,
+        loc="center left",
+        bbox_to_anchor=(1.02, 0.5),
+        fontsize=7,
+        title="WorldCover / flood",
+        framealpha=0.92,
+        borderpad=0.4,
+    )
+
+
 def _ee_thumb_array(image: ee.Image, vis: dict | None, region: ee.Geometry, dimensions: int) -> np.ndarray:
     vis_img = image if vis is None else image.visualize(**vis)
     url = vis_img.getThumbURL({"region": region, "dimensions": dimensions, "format": "png"})
@@ -202,49 +355,72 @@ def _ee_thumb_array(image: ee.Image, vis: dict | None, region: ee.Geometry, dime
         return np.array(Image.open(io.BytesIO(resp.read())))
 
 
+def _add_flood_legend(ax) -> None:
+    from matplotlib.patches import Patch
+
+    ax.legend(
+        handles=[
+            Patch(facecolor=FLOOD_COLOR, edgecolor="0.2", linewidth=0.4, label="Final flood"),
+        ],
+        loc="lower right",
+        fontsize=8,
+        framealpha=0.92,
+    )
+
+
 def _figure_png_b64(
-    s2_rgb: ee.Image | None,
-    s2_rgb_vis: dict,
     co_db: ee.Image,
-    flood_boundary: ee.FeatureCollection,
+    water_index: ee.Image,
+    final_flood: ee.Image,
     aoi: ee.Geometry,
     start: str,
     end: str,
     peak: str,
     center: tuple[float, float],
-    n_poly: int,
+    closest_id: str,
+    width_km: float,
+    flood_km2: float,
+    aoi_km2: float,
+    flooded_urban_km2: float,
 ) -> str:
     import base64
 
-    n_poly = int(n_poly)
-    outline = ee.Image().byte().paint(flood_boundary, 1, 3)
-    if s2_rgb is not None:
-        left = _ee_thumb_array(s2_rgb, s2_rgb_vis, aoi, cfg.THUMB_DIMENSIONS)
-        rgb_with_boundary = s2_rgb.visualize(**s2_rgb_vis).blend(
-            outline.selfMask().visualize(palette=["#ffff00"])
-        )
-        right = _ee_thumb_array(rgb_with_boundary, None, aoi, cfg.THUMB_DIMENSIONS)
-        left_title = f"AOI — Sentinel-2 RGB\n{start} – {end}"
-    else:
-        vv_vis = {"min": -20, "max": 0, "palette": ["black", "white"]}
-        left = _ee_thumb_array(co_db.select("VV"), vv_vis, aoi, cfg.THUMB_DIMENSIONS)
-        vv_b = co_db.select("VV").visualize(**vv_vis).blend(
-            outline.selfMask().visualize(palette=["#ffff00"])
-        )
-        right = _ee_thumb_array(vv_b, None, aoi, cfg.THUMB_DIMENSIONS)
-        left_title = f"AOI — Sentinel-1 VV (no cloud-free S2)\n{start} – {end}"
+    s1_when = s1_index_datetime(closest_id)
+    flood_fill = final_flood.selfMask().visualize(palette=[FLOOD_COLOR], opacity=0.55)
+    left_img = co_db.select("VV").visualize(**VV_VIS)
+    right_img = water_index.visualize(**WI_VIS).blend(flood_fill)
+    left = _ee_thumb_array(left_img, None, aoi, cfg.THUMB_DIMENSIONS)
+    right = _ee_thumb_array(right_img, None, aoi, cfg.THUMB_DIMENSIONS)
 
-    fig, axes = plt.subplots(1, 2, figsize=(12, 6.6))
+    fig, axes = plt.subplots(1, 2, figsize=(12.5, 6.6))
     axes[0].imshow(left)
-    axes[0].set_title(left_title)
+    axes[0].set_title(f"Sentinel-1 VV (dB)\nS1 closest to peak: {s1_when}")
     axes[1].imshow(right)
-    axes[1].set_title(
-        f"AOI — flood boundary ({n_poly} polygons)\nS1 {start} – {end} (peak {peak})"
-    )
+    axes[1].set_title(f"Water index (VV+VH) + final flood\nS1 closest to peak: {s1_when}")
     for ax in axes:
         ax.set_axis_off()
-    fig.suptitle(f"{list(center)}  |  {start} → {end}", fontsize=11)
-    fig.tight_layout()
+    _add_scale_bar(axes[0], width_km)
+    _add_north_arrow(axes[0])
+    _add_flood_legend(axes[1])
+    center_str = f"[{center[0]:.4f}, {center[1]:.4f}]"
+    fig.suptitle(
+        f"{center_str}  |  ±{width_km / 2:.1f} km  |  {start} → {end}\n"
+        f"S1 scene {closest_id}",
+        fontsize=10,
+    )
+    pct = 100 * flood_km2 / aoi_km2 if aoi_km2 else 0.0
+    fig.text(
+        0.5,
+        0.01,
+        f"Figure: Final flood extent (yellow) = {flood_km2 * 1e6:,.0f} m² "
+        f"({flood_km2:,.2f} km², {pct:.1f}% of the {aoi_km2:,.1f} km² AOI). "
+        f"Urban flooded: {flooded_urban_km2:,.2f} km² ({100 * flooded_urban_km2 / flood_km2:.1f}% of the flood)",
+        ha="center",
+        va="bottom",
+        fontsize=12,
+        wrap=True,
+    )
+    fig.tight_layout(rect=(0, 0.05, 1, 0.92))
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=120, bbox_inches="tight")
     plt.close(fig)
@@ -423,23 +599,23 @@ def run_flood_mapping(
         aoi_km2 = _area_km2(ee.Image.constant(1).clip(aoi), aoi)
         stats = {
             "aoi_km2": aoi_km2,
-            "event_water_km2": _area_km2(event_water, aoi),
-            "permanent_water_km2": _area_km2(permanent_water, aoi),
-            "worldcover_80_km2": _area_km2(wc_water, aoi),
-            "event_on_permanent_km2": _area_km2(event_water.And(permanent_water), aoi),
-            "dark_land_km2": _area_km2(dark_land, aoi),
-            "event_on_dark_land_km2": _area_km2(event_water.And(dark_land), aoi),
-            "flood_candidate_km2": _area_km2(flood_candidate, aoi),
-            "after_elev_mask_km2": _area_km2(flood_candidate.And(elev_ok), aoi),
-            "after_slope_mask_km2": _area_km2(flood_candidate.And(elev_ok).And(slope_ok), aoi),
-            "after_all_masks_km2": _area_km2(flood_masked, aoi),
-            "after_mmu_km2": _area_km2(flood_mmu, aoi),
+            # "event_water_km2": _area_km2(event_water, aoi),
+            # "permanent_water_km2": _area_km2(permanent_water, aoi),
+            # "worldcover_80_km2": _area_km2(wc_water, aoi),
+            # "event_on_permanent_km2": _area_km2(event_water.And(permanent_water), aoi),
+            # "dark_land_km2": _area_km2(dark_land, aoi),
+            # "event_on_dark_land_km2": _area_km2(event_water.And(dark_land), aoi),
+            # "flood_candidate_km2": _area_km2(flood_candidate, aoi),
+            # "after_elev_mask_km2": _area_km2(flood_candidate.And(elev_ok), aoi),
+            # "after_slope_mask_km2": _area_km2(flood_candidate.And(elev_ok).And(slope_ok), aoi),
+            # "after_all_masks_km2": _area_km2(flood_masked, aoi),
+            # "after_mmu_km2": _area_km2(flood_mmu, aoi),
             "flood_final_km2": _area_km2(final_flood, aoi),
-            "excluded_by_elevation_km2": _area_km2(flood_candidate.And(elev_ok.Not()), aoi),
-            "excluded_by_slope_km2": _area_km2(flood_candidate.And(slope_ok.Not()), aoi),
-            "excluded_by_layover_shadow_km2": _area_km2(
-                flood_candidate.And(layover_shadow_risk), aoi
-            ),
+            # "excluded_by_elevation_km2": _area_km2(flood_candidate.And(elev_ok.Not()), aoi),
+            # "excluded_by_slope_km2": _area_km2(flood_candidate.And(slope_ok.Not()), aoi),
+            # "excluded_by_layover_shadow_km2": _area_km2(
+            #     flood_candidate.And(layover_shadow_risk), aoi
+            # ),
             "flooded_urban_km2": _area_km2(final_flood.And(urban_flag), aoi),
         }
         stats["flood_pct_of_aoi"] = (
@@ -447,8 +623,22 @@ def run_flood_mapping(
         )
 
         report(10, "Rendering comparison figure")
+        w, s, e, n = bounds
+        width_km = abs(e - w) * 111.32 * math.cos(math.radians((s + n) / 2.0))
         figure_b64 = _figure_png_b64(
-            s2_rgb, s2_rgb_vis, co_db, flood_boundary, aoi, start, end, peak, center, n_poly
+            co_db,
+            water_index,
+            final_flood,
+            aoi,
+            start,
+            end,
+            peak,
+            center,
+            str(closest_id),
+            width_km,
+            stats["flood_final_km2"],
+            stats["aoi_km2"],
+            stats["flooded_urban_km2"],
         )
         meta = {
             "gee_project": cfg.GEE_PROJECT,
@@ -461,6 +651,7 @@ def run_flood_mapping(
             "s2_scenes_used": n_s2,
             "s2_scenes_cloudy_lt_10": n_s2_clear,
             "closest_s1_id": closest_id,
+            "closest_s1_datetime": s1_index_datetime(str(closest_id)),
             "closest_s1_peak_diff_days": peak_diff,
             "wi_otsu_db": round(wi_otsu, 3),
             "wi_cap_db": wi_cap,

@@ -43,7 +43,7 @@ Rules:
 - Put an image placeholder exactly once: <img src="{{FIGURE}}" alt="Flood comparison figure">
 - Sections (use <h1>/<h2>): Introduction, Data, Methods, Results, Discussion, Conclusion, References.
 - Use only numbers present in the stats/meta JSON. Do not invent areas or dates.
-- In Results, explain the two-panel figure (left RGB vs right yellow flood outline)
+- In Results, explain the two-panel figure (left: Sentinel-1 VV with scale bar and north arrow; right: water index + final flood). Mention the Sentinel-1 acquisition time from meta if present.
   and the stats funnel (event water → minus permanent → terrain → MMU → final).
 - State limitations: SAR speckle, no pre/post difference, WorldCover 2021 baseline,
   layover/shadow is a slope-vs-angle proxy, cloud may hide S2 RGB.

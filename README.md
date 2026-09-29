@@ -44,17 +44,23 @@ Selecting a suitable site for logistics supply from sea, immediately following a
 3. **Not permanent** — drop WorldCover 80, JRC occurrence ≥ threshold, and DEM nodata (open sea). Optionally drop WorldCover 50/60.
 4. **Terrain** — drop high ground (`ELEVATION_MAX_M` and optional height above AOI DEM p5) and slopes steeper than `SLOPE_MAX_DEG`; layover/shadow *risk proxy* from slope vs incidence angle.
 5. **Clean** — minimum mapping unit, then a small morphological opening.
-6. **Output** — flood raster, boundary polygons, area stats, RGB comparison figure.
+6. **Output** — flood raster, boundary polygons, area stats, VV / WI+flood comparison figure.
 
 SAR is used because it works through cloud (storms/cyclones). Sentinel-2 is a secondary optical check, not the primary flood classifier.
 
 **Honesty:** Lecture 6 maps land vs water with **Random Forest on VV/VH**, not a water-index cut. WI + Otsu + a dB cap is a **project choice**. There is no pre/post SAR difference layer in this notebook; inundation is event water minus a land-cover / JRC baseline on low, flat ground.
 
+### Example program output
+
+The generated comparison figure shows the Sentinel-1 VV composite on the left and the water index with the final flood extent overlaid in yellow on the right.
+
+![Sentinel-1 flood-mapping program output](assets/s1_output.png)
+
 ---
 
 ## Draft architecture
 
-The notebook (`01_sentinel1_layer.ipynb`) is the lab-style reference. The map UI runs the same flood flow in `processing/pipeline.py`. Sentinel-2 is only used for the RGB comparison figure, not for classifying flood.
+The notebook (`01_sentinel1_layer.ipynb`) is the lab-style reference. The map UI runs the same flood flow in `processing/pipeline.py`. Sentinel-2 is optional optical context, not the flood classifier. The comparison figure is Sentinel-1 VV and water index with `final_flood` overlaid.
 
 ```mermaid
 flowchart TD
@@ -88,7 +94,7 @@ flowchart TD
     FF["final_flood raster"]
     POLY["flood_boundary polygons"]
     STAT["area statistics"]
-    MAP["geemap + RGB vs boundary figure"]
+    MAP["geemap + VV vs WI + final flood"]
   end
   S1 --> CLIP --> LEE --> WI
   WI --> OTSU --> EW
@@ -146,7 +152,7 @@ Dark layout, gold accent. Team name **Geographically Informed Speculators** in t
 │  progress bar    │                                          │
 │  step + elapsed  │                                          │
 ├──────────────────┴──────────────────────────────────────────┤
-│ Figure — two-panel PNG (S2 RGB vs flood outline)            │
+│ Figure — two-panel PNG (S1 VV, WI + flood)                  │
 │ Stats  — JSON (areas, meta; report is null for now)         │
 └─────────────────────────────────────────────────────────────┘
 ```
