@@ -19,10 +19,10 @@ MAP_ZOOM = 11
 
 # Short window so S1 and S2 can be checked quickly. Edit if a collection is empty.
 # Change the dates to the dates of the flood event
-MAP_CENTER = [-39.471, 176.869]  # Hawke's Bay Airport
-START_DATE = "2023-02-01"
-END_DATE = "2023-02-25"
-FLOOD_PEAK_DATE = "2023-02-15"  # Cyclone Gabrielle (https://www.reuters.com/business/environment/cyclone-gabrielle-causes-havoc-new-zealand-firefighter-missing-2023-02-13/)
+MAP_CENTER = [-39.58, 176.88]  # Hawke's Bay Airport
+START_DATE = "2023-02-12"
+END_DATE = "2023-02-16"
+FLOOD_PEAK_DATE = "2023-02-14"  # Cyclone Gabrielle (https://www.reuters.com/business/environment/cyclone-gabrielle-causes-havoc-new-zealand-firefighter-missing-2023-02-13/)
 
 
 def aoi_bounds():

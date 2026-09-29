@@ -1,0 +1,178 @@
+:root {
+  --bg: #0f1419;
+  --panel: #1a2330;
+  --text: #e8eef4;
+  --muted: #9aa8b5;
+  --accent: #d4a017;
+  --border: #2c3a4a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.9rem 1.2rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.logo {
+  height: 56px;
+  width: auto;
+}
+
+h1 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.sub {
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  min-height: 62vh;
+}
+
+.panel {
+  padding: 1rem 1.2rem;
+  border-right: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.panel h2 {
+  font-size: 1rem;
+  margin: 1rem 0 0.5rem;
+}
+
+.panel label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.7rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+input {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.hint {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.mono {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+button {
+  width: 100%;
+  margin-top: 0.6rem;
+  padding: 0.65rem;
+  border: 0;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #1a1408;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.status {
+  min-height: 1.4rem;
+  font-size: 0.85rem;
+}
+
+.progress {
+  margin-top: 0.8rem;
+  padding: 0.7rem;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: rgba(212, 160, 23, 0.08);
+}
+
+.progress-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+
+.progress-text {
+  margin: 0.55rem 0 0.2rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.progress-elapsed {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.map-wrap {
+  min-height: 420px;
+}
+
+#map {
+  height: 100%;
+  min-height: 420px;
+}
+
+.results {
+  padding: 1rem 1.2rem 2rem;
+  border-top: 1px solid var(--border);
+}
+
+#figure {
+  max-width: 100%;
+  height: auto;
+  background: #000;
+}
+
+@media (max-width: 860px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .panel {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+}
