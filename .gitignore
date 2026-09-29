@@ -60,5 +60,3 @@ output/
 # Generated geemap pages
 geemap.html
 *_map.html
-
-uv.lock
