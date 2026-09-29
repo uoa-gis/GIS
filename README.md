@@ -159,13 +159,6 @@ Dark layout, gold accent. Team name **Geographically Informed Speculators** in t
 | Map        | OpenStreetMap. **Click** places a gold rectangle of ± half-width km. Leaflet.draw **rectangle** tool for a custom box. Selected bounds are shown as text                                                                                                                                                           |
 | Results    | Same two-panel figure as the last cells of `01_sentinel1_layer.ipynb`, then area stats + meta as JSON                                                                                                                                                                                                              |
 
-<<<<<<< HEAD
-- Team name **Geographically Informed Speculators** and logo at the top of the page. Drop the logo in `[assets/logo/](assets/logo/)` (see that folder’s README).
-- Input: select an area of interest (AOI) on the map.
-- Processing module: clip, cloud mask, speckle filter, course models, fusion.
-- Output on the same UI: geemap flood polygon / layers, plus a short report.
-- **Gemini** turns the comparison figure plus area stats into an **HTML** briefing (`llm/report.py`; key in `.env` as `GEMINI_KEY`).
-=======
 
 Defaults match Cyclone Gabrielle at Hawke’s Bay Airport: 2023-02-01 → 2023-02-25, peak 2023-02-15, 5 km half-width, map centred at about `[-39.471, 176.869]`. Terrain defaults are **10°** max slope and **25 m** max elevation (`GET /api/defaults` loads these from `processing/defaults.py`).
 
@@ -219,7 +212,6 @@ Open **[http://127.0.0.1:8000](http://127.0.0.1:8000)**
 4. Watch the progress box until the figure and stats appear below.
 
 Jobs usually take **several minutes**. `--reload` picks up Python changes; refresh the browser for HTML/CSS/JS. API: `POST /api/run` then poll `GET /api/job/{job_id}` (status, progress, result).
->>>>>>> ui-basic
 
 ---
 
@@ -260,22 +252,6 @@ Jobs usually take **several minutes**. `--reload` picks up Python changes; refre
 GEOG761-GIS/
   README.md
   pyproject.toml
-<<<<<<< HEAD
-  .env.example                 # GEMINI_KEY placeholder (real key stays in .env)
-  assets/logo/                 # team logo
-  llm/                         # Gemini report from figure + stats (not in the notebook)
-    report.py
-  notebooks/
-    layer_config.py
-    01_sentinel1_layer.ipynb   # last cells: figure, stats, then llm.generate_flood_report
-    02_sentinel2_layer.ipynb
-    03_dem_layer.ipynb
-```
-
-Copy `.env.example` to `.env` and set `GEMINI_KEY`. After the two-panel figure cell, run the LLM report cell (needs `fig` and `stats` in memory). The report is **HTML** (comparison figure embedded). Optional: `GEMINI_MODEL` (default `gemini-2.5-flash`).
-
-Later: `ui/`, `processing/`, and `output/` when the map UI and fusion pipeline are added.
-=======
   .env.example                 # EE_PROJECT
   assets/logo/                 # team logo (optional)
   notebooks/                   # GEE / geemap layer tests (unchanged for the UI)
@@ -289,4 +265,3 @@ Later: `ui/`, `processing/`, and `output/` when the map UI and fusion pipeline a
     static/
 ```
 
->>>>>>> ui-basic
