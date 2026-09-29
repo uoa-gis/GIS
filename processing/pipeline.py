@@ -284,7 +284,7 @@ def run_flood_mapping(
                 .filterBounds(aoi)
                 .filterDate(start_d, end_d)
                 .filter(ee.Filter.eq("instrumentMode", "IW"))
-                .filter(ee.Filter.eq("orbitProperties_pass", "DESCENDING"))
+                # .filter(ee.Filter.eq("orbitProperties_pass", "DESCENDING"))
                 .filter(ee.Filter.eq("resolution_meters", 10))
                 .select(["VV", "VH", "angle"])
             )
