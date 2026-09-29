@@ -32,6 +32,8 @@ Method:
 - Event Sentinel-1 GRD IW VV+VH (descending, 10 m).
 - Dual-pol water index WI = VV_dB + VH_dB.
 - Event water = WI below Otsu(WI) AND WI below a fixed dB cap.
+- Also require event WI to be at least WI_CHANGE_MIN_DB below the mean WI of
+  the HIST_LOOKBACK_YEARS ending at the event start (new/darker water).
 - Subtract permanent water (WorldCover 80, JRC occurrence, DEM nodata sea).
 - Keep only low / flat ground (elevation and slope caps).
 - Sentinel-2 RGB is context for the figure, not the flood classifier.
@@ -45,7 +47,8 @@ Rules:
 - Use only numbers present in the stats/meta JSON. Do not invent areas or dates.
 - In Results, explain the two-panel figure (left: Sentinel-1 VV with scale bar and north arrow; right: water index + final flood). Mention the Sentinel-1 acquisition time from meta if present.
   and the stats funnel (event water → minus permanent → terrain → MMU → final).
-- State limitations: SAR speckle, no pre/post difference, WorldCover 2021 baseline,
+- State limitations: SAR speckle, historical mean WI is a multi-year composite
+  (not a matched pre-event pair), WorldCover 2021 baseline,
   layover/shadow is a slope-vs-angle proxy, cloud may hide S2 RGB.
 - No RAG. No Python. No API keys.
 """

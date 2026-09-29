@@ -19,7 +19,8 @@ MAP_ZOOM = 11
 
 # Short window so S1 and S2 can be checked quickly. Edit if a collection is empty.
 # Change the dates to the dates of the flood event
-MAP_CENTER = [-39.58, 176.88]  # Hawke's Bay Airport
+# MAP_CENTER = [-39.58, 176.88]  # Grassland below the river
+MAP_CENTER = [-39.4829, 176.88]  # Hawke's Bay Airport
 START_DATE = "2023-02-12"
 END_DATE = "2023-02-16"
 FLOOD_PEAK_DATE = "2023-02-14"  # Cyclone Gabrielle (https://www.reuters.com/business/environment/cyclone-gabrielle-causes-havoc-new-zealand-firefighter-missing-2023-02-13/)
@@ -56,6 +57,11 @@ SENTINEL1_ENL = 4.9                # equivalent number of looks, IW GRD (for Lee
 # Dual-pol water index WI = VV_dB + VH_dB. Used with Otsu: a pixel is water only
 # if WI < Otsu(WI) AND WI < this cap. Do not lower this just to drop runways.
 WATER_INDEX_MAX_DB = -32.0
+# Mean WI over this many years ending at START_DATE (event window excluded).
+HIST_LOOKBACK_YEARS = 2.0
+# Flood-change cut: event WI must be at least this many dB below the historical
+# mean WI (WI = VV+VH, so ~2 dB per polarisation ≈ 4 dB here).
+WI_CHANGE_MIN_DB = 4.0
 # Built-up (50) and bare/sparse (60) — typical runway/apron. Flooded streets/pads
 # in these classes will also be excluded.
 # EXCLUDE_WORLDCOVER_CLASSES = (50, 60)

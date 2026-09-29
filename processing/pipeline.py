@@ -9,7 +9,7 @@ import io
 import math
 import re
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, Callable
 from urllib.request import urlopen
 
@@ -537,7 +537,7 @@ def run_flood_mapping(
         co_angle = co_col.select("angle").mean().clip(aoi)
 
         water_index = co_db.select("VV").add(co_db.select("VH")).rename("WI")
-        report(6, "Computing water index and Otsu threshold")
+        report(6, "Computing water index, Otsu, and historical WI change")
         wi_otsu = compute_otsu(water_index, "WI", aoi, scale)
         wi_cap = cfg.WATER_INDEX_MAX_DB
         wi_effective = min(wi_otsu, wi_cap)
@@ -550,8 +550,35 @@ def run_flood_mapping(
             maxPixels=1e9,
         ).getInfo()
 
+        hist_end = start
+        hist_start = (
+            date.fromisoformat(start) - timedelta(days=int(round(365.25 * cfg.HIST_LOOKBACK_YEARS)))
+        ).isoformat()
+        hist_col = s1_iw_vv_vh_angle(hist_start, hist_end)
+        n_hist = int(hist_col.size().getInfo())
+        if n_hist <= 0:
+            raise ValueError(
+                f"No Sentinel-1 scenes in the {cfg.HIST_LOOKBACK_YEARS}-year lookback "
+                f"({hist_start} → {hist_end}). Lengthen HIST_LOOKBACK_YEARS."
+            )
+        hist_db = build_composite(hist_col)
+        hist_wi = hist_db.select("VV").add(hist_db.select("VH")).rename("WI_hist")
+        # Positive = event is darker than the historical mean (more water-like).
+        wi_change = hist_wi.subtract(water_index).rename("WI_change")
+        wi_anomalous = wi_change.gt(cfg.WI_CHANGE_MIN_DB).rename("wi_anomalous")
+        wi_change_pct = wi_change.reduceRegion(
+            reducer=ee.Reducer.percentile([5, 50, 95]),
+            geometry=aoi,
+            scale=scale,
+            bestEffort=True,
+            maxPixels=1e9,
+        ).getInfo()
+
         flood_candidate = (
-            event_water.And(permanent_water.Not()).And(dark_land.Not()).rename("flood_candidate")
+            event_water.And(wi_anomalous)
+            .And(permanent_water.Not())
+            .And(dark_land.Not())
+            .rename("flood_candidate")
         )
 
         report(7, "Applying elevation, slope and layover masks")
@@ -599,13 +626,14 @@ def run_flood_mapping(
         aoi_km2 = _area_km2(ee.Image.constant(1).clip(aoi), aoi)
         stats = {
             "aoi_km2": aoi_km2,
-            # "event_water_km2": _area_km2(event_water, aoi),
+            "event_water_km2": _area_km2(event_water, aoi),
+            "wi_anomalous_km2": _area_km2(wi_anomalous, aoi),
             # "permanent_water_km2": _area_km2(permanent_water, aoi),
             # "worldcover_80_km2": _area_km2(wc_water, aoi),
             # "event_on_permanent_km2": _area_km2(event_water.And(permanent_water), aoi),
             # "dark_land_km2": _area_km2(dark_land, aoi),
             # "event_on_dark_land_km2": _area_km2(event_water.And(dark_land), aoi),
-            # "flood_candidate_km2": _area_km2(flood_candidate, aoi),
+            "flood_candidate_km2": _area_km2(flood_candidate, aoi),
             # "after_elev_mask_km2": _area_km2(flood_candidate.And(elev_ok), aoi),
             # "after_slope_mask_km2": _area_km2(flood_candidate.And(elev_ok).And(slope_ok), aoi),
             # "after_all_masks_km2": _area_km2(flood_masked, aoi),
@@ -648,6 +676,12 @@ def run_flood_mapping(
             "end_date": end,
             "peak_date": peak,
             "s1_scenes": n_co,
+            "s1_hist_scenes": n_hist,
+            "s1_hist_start": hist_start,
+            "s1_hist_end": hist_end,
+            "hist_lookback_years": cfg.HIST_LOOKBACK_YEARS,
+            "wi_change_min_db": cfg.WI_CHANGE_MIN_DB,
+            "wi_change_percentiles": wi_change_pct,
             "s2_scenes_used": n_s2,
             "s2_scenes_cloudy_lt_10": n_s2_clear,
             "closest_s1_id": closest_id,
