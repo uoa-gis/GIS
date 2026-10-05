@@ -38,6 +38,7 @@ Selecting a suitable site for logistics supply from sea, immediately following a
 | ESA WorldCover 2021              | `ESA/WorldCover/v200/2021`                                    | Permanent water (class 80); optional dark-land classes 50/60 (runways) |
 | JRC Global Surface Water         | `JRC/GSW1_4/GlobalSurfaceWater` `occurrence`                  | Permanent / frequent water                                             |
 | Sentinel-2 RGB (optional figure) | `COPERNICUS/S2_SR_HARMONIZED`                                 | Context RGB, not the flood classifier                                  |
+| LINZ NZ Building Outlines        | [LINZ layer 101290](https://data.linz.govt.nz/layer/101290-nz-building-outlines/), local shapefile at `data/nz-building/nz-building-outlines.shp` | Roof outlines (≥ 10 m²) from aerial imagery; counts buildings that touch the flood. Not on GEE; read locally with GeoPandas |
 
 
 **How a pixel becomes flood**
@@ -48,7 +49,30 @@ Selecting a suitable site for logistics supply from sea, immediately following a
 4. **Flood candidate** — `event_water` **and** `wi_anomalous`, then drop WorldCover 80, JRC occurrence ≥ threshold, DEM nodata (open sea), and optional WorldCover 50/60.
 5. **Terrain** — drop high ground (`ELEVATION_MAX_M` and optional height above AOI FABDEM p5) and slopes steeper than `SLOPE_MAX_DEG`; layover/shadow *risk proxy* from slope vs incidence angle. Elevation is **FABDEM** (bare earth), not raw Copernicus GLO-30 (DSM with buildings/trees).
 6. **Clean** — minimum mapping unit, then a small morphological opening.
-7. **Output** — flood raster, boundary polygons, area stats, VV / WI+flood comparison figure.
+7. **Vectorise** — `final_flood` → `flood_boundary` polygons (`reduceToVectors`, 40 m, eight-connected).
+8. **Building exposure** — LINZ outlines ∩ `flood_boundary` (see below).
+9. **Output** — flood raster, boundary polygons, area and building stats, three-panel figure.
+
+### Counting affected buildings (LINZ ∩ flood)
+
+Code: `processing/buildings.py`, used by notebook section 5d and the UI pipeline.
+
+1. **Download.** Export *NZ Building Outlines* from the LINZ Data Service as a shapefile (WGS 84 or NZTM2000 both work) and unzip it into `data/nz-building/`. The path is `BUILDING_OUTLINES_PATH` in `notebooks/layer_config.py` and `processing/defaults.py`. Shapefile sidecars are gitignored.
+2. **Clip to the AOI.** `gpd.read_file(path, bbox=AOI_BOUNDS)` reads only outlines inside the AOI rectangle (the national file is large), reprojected to WGS 84. This is `buildings_in_aoi`.
+3. **Bring the flood to the client.** `flood_boundary` (Earth Engine `FeatureCollection`) is pulled with `getInfo()` and turned into a GeoDataFrame in WGS 84.
+4. **Intersect.** `gpd.sjoin(buildings, flood, predicate="intersects")`. A building counts once if **any part** of its roof outline touches flood water; duplicates from multiple flood polygons are dropped on `building_i`. This is `buildings_affected`.
+5. **Footprint area.** The affected outlines are overlaid with the flood polygons in **NZTM2000** (`EPSG:2193`) so the wetted roof area is in square metres (`buildings_affected_footprint_km2`). The count itself does not depend on the CRS.
+
+| Stat key | Meaning |
+| --- | --- |
+| `buildings_in_aoi` | LINZ outlines inside the AOI rectangle |
+| `buildings_affected` | Outlines intersecting `flood_boundary` |
+| `buildings_affected_pct` | `buildings_affected / buildings_in_aoi × 100` |
+| `buildings_affected_footprint_km2` | Area of outline ∩ flood, NZTM2000 |
+
+The figure's third panel draws flood in yellow, AOI outlines in grey and affected outlines in red. The notebook map adds only the affected outlines as a layer (uploading every AOI outline to Earth Engine is slow).
+
+**Read these numbers as exposure, not damage.** A building is counted even if only its edge touches a 10–40 m flood pixel, so the count leans high near flood boundaries. Outlines include garages and sheds and are not households. They also reflect the imagery date (for Hawke's Bay, 2023–2024), so buildings demolished after Gabrielle may still appear.
 
 Defaults: `HIST_LOOKBACK_YEARS = 2`, `WI_CHANGE_MIN_DB = 4` (WI is VV+VH, so about 2 dB per polarisation). Both live in `notebooks/layer_config.py` and `processing/defaults.py`.
 
@@ -58,9 +82,9 @@ SAR is used because it works through cloud (storms/cyclones). Sentinel-2 is a se
 
 ### Example program output figure
 
-The generated comparison figure shows the Sentinel-1 VV composite on the left and the water index with the final flood extent overlaid in yellow on the right.
+The generated comparison figure shows the Sentinel-1 VV composite on the left, the water index with the final flood extent overlaid in yellow on the middle and affected LINZ affected building map on the right.
 
-![Sentinel-1 flood-mapping program output](assets/s1_output1.png)
+![Sentinel-1 flood-mapping program output](assets/s1_output2.png)
 
 ---
 
@@ -90,6 +114,7 @@ flowchart TD
     WC["WorldCover 2021"]
     JRC["JRC GSW occurrence"]
     S2["Sentinel-2 RGB optional"]
+    LINZ["LINZ building outlines (local shapefile)"]
   end
   subgraph PRE["Prep (same for both stacks)"]
     CLIP["Clip rectangular AOI"]
@@ -118,8 +143,9 @@ flowchart TD
   subgraph OUT["Outputs"]
     FF["final_flood raster"]
     POLY["flood_boundary polygons"]
-    STAT["area statistics"]
-    MAP["geemap + VV vs WI + final flood"]
+    BLD["buildings_affected = LINZ outlines intersecting flood_boundary"]
+    STAT["area and building statistics"]
+    MAP["geemap + VV, WI + flood, buildings panel"]
   end
   S1E --> CLIP
   S1H --> CLIP
@@ -144,6 +170,10 @@ flowchart TD
   CAND --> ELEV --> SLP --> LAY --> MMU --> FF
   FF --> POLY
   FF --> STAT
+  POLY --> BLD
+  LINZ --> BLD
+  BLD --> STAT
+  BLD --> MAP
   S2 --> MAP
   FF --> MAP
   POLY --> MAP
@@ -186,8 +216,8 @@ Dark layout, gold accent. Team name **Geographically Informed Speculators** in t
 │  progress bar    │                                          │
 │  step + elapsed  │                                          │
 ├──────────────────┴──────────────────────────────────────────┤
-│ Figure — two-panel PNG (S1 VV, WI + flood)                  │
-│ Stats  — JSON (areas, meta; report is null for now)         │
+│ Figure — S1 VV, WI + flood, LINZ buildings ∩ flood          │
+│ Key Flood Statistics — table (area, % AOI, buildings)       │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -197,7 +227,7 @@ Dark layout, gold accent. Team name **Geographically Informed Speculators** in t
 | Header     | Team name and optional logo                                                                                                                                                                                                                                                                                        |
 | Left panel | Native date pickers (start, end, optional peak; default peak is the window midpoint). Half-width (km) for click-to-centre mode. **Max slope (°)** and **max elevation (m)** (defaults `SLOPE_MAX_DEG=10`, `ELEVATION_MAX_M=25`). Run button. Live **progress** under the button: bar, `Step n/10: …`, elapsed time |
 | Map        | OpenStreetMap. **Click** places a gold rectangle of ± half-width km. Leaflet.draw **rectangle** tool for a custom box. Selected bounds are shown as text                                                                                                                                                           |
-| Results    | Same two-panel figure as the last cells of `01_sentinel1_layer.ipynb`, then area stats + meta as JSON                                                                                                                                                                                                              |
+| Results    | Same figure as notebook section 5c (third panel = LINZ buildings intersecting flood, if the shapefile is present), then a **Key Flood Statistics** table: final flood area, share of AOI, buildings in AOI, buildings intersecting flood, % affected, flooded urban area |
 
 
 Defaults match Cyclone Gabrielle at Hawke’s Bay Airport: 2023-02-01 → 2023-02-25, peak 2023-02-15, 5 km half-width, map centred at about `[-39.471, 176.869]`. Terrain defaults are **10°** max slope and **25 m** max elevation (`GET /api/defaults` loads these from `processing/defaults.py`).
@@ -219,9 +249,9 @@ These controls are sent with `POST /api/run`. They replace the notebook’s `STA
 | Max elevation (m) | `elevation_max_m`                | 25                                    | Drop flood candidates at or above this FABDEM height. A second relative cap (`ELEVATION_ABOVE_P5_M`) still applies in the backend          |
 
 
-**Progress steps (shown under the button):** (1) initialise Earth Engine, (2) search Sentinel-1, (3) Sentinel-2 RGB, (4) DEM / WorldCover / JRC, (5) Lee + terrain flatten, (6) water index + Otsu + historical WI change, (7) elevation / slope / layover masks, (8) vectorise flood polygons, (9) area statistics, (10) render figure. Earth Engine is lazy, so the bar can sit on steps 6, 7 and 9 for a while. Only **one** run at a time; a second job waits.
+**Progress steps (shown under the button):** (1) initialise Earth Engine, (2) search Sentinel-1, (3) Sentinel-2 RGB, (4) DEM / WorldCover / JRC, (5) Lee + terrain flatten, (6) water index + Otsu + historical WI change, (7) elevation / slope / layover masks, (8) vectorise flood polygons, (9) area statistics and LINZ building intersection, (10) render figure. Earth Engine is lazy, so the bar can sit on steps 6, 7 and 9 for a while. Only **one** run at a time; a second job waits.
 
-**Later:** POST the figure (PNG base64) and stats JSON to Anthropic (Claude) and fill `report`. That field is currently `null`.
+**Optional Gemini analysis:** set any of `REPORT_ANALYSIS`, `REPORT_IMPLICATIONS`, `REPORT_UNCERTAINTIES`, `REPORT_CONCLUSION` to `True` in `notebooks/layer_config.py` to add those HTML sections under the statistics table (needs `GEMINI_KEY` in `.env`). All `False` skips the Gemini call.
 
 ### How to run
 
@@ -284,6 +314,7 @@ Jobs usually take **several minutes**. `--reload` picks up Python changes; refre
 | Event WI vs historical mean WI (change mask)                     | Project novelty (not a 761 exercise)          |
 | Optional U-Net surface water on 6-band Sentinel-2                | Lab 5 (deep learning idea: Lecture 5 / Lab 4) |
 | DEM keep low / flat pixels                                       | Extra GIS prior (not a 761 exercise)          |
+| LINZ building outlines ∩ flood (exposure count)                  | Project novelty (vector overlay)              |
 | Fusion overlay                                                   | Project novelty                               |
 
 

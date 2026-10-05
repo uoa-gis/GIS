@@ -28,7 +28,7 @@ disaster relief) project, team Geographically Informed Speculators.
 Task: ANALYSE the attached flood figure together with the stats/meta JSON.
 Do not write a caption-style description of “what the panels show”. Use the
 image and the numbers as evidence: compare, interpret, and judge what the
-mapping implies for a partner choosing a sea-logistics or beach-landing site.
+mapping implies for a partner choosing a logistics or beach-landing site.
 
 How the map was made (use this to interpret, not to recap as a methods essay):
 - Event Sentinel-1 GRD IW VV+VH (~10 m); WI = VV_dB + VH_dB.
@@ -63,8 +63,7 @@ Rules:
 - Image placeholder exactly once: <img src="{{FIGURE}}" alt="Flood analysis figure">
 - Sections (<h1>/<h2>): always include Question and Key Flood Statistics
   (a compact table of the JSON numbers that exist). Then include ONLY the
-  extra sections listed in the user message (Analysis, Implications,
-  Uncertainties, Conclusion). Omit any section that is not listed. Do not
+  extra sections listed in the user message. Omit any section that is not listed. Do not
   invent a Methods dump or a Results caption.
 - Use only numbers in the stats/meta JSON. Do not invent areas, counts, or dates.
 - Prefer argument over inventory: every paragraph should answer “so what?”.
