@@ -30,15 +30,16 @@ Selecting a suitable site for logistics supply from sea, immediately following a
 **Inputs**
 
 
-| Input                            | Collection / product                                          | Role                                                                   |
-| -------------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| Sentinel-1 event stack           | `COPERNICUS/S1_GRD` IW, 10 m, `START_DATE`–`END_DATE`         | Event composite; `WI_event = VV_dB + VH_dB`                            |
-| Sentinel-1 historical stack      | Same collection, `HIST_LOOKBACK_YEARS` ending at `START_DATE` | Mean WI before the event (`WI_hist`). Event window is excluded         |
-| FABDEM (bare-earth DEM)          | `projects/sat-io/open-datasets/FABDEM`                        | Elevation, slope, sea (nodata). GLO-30 with buildings/trees removed    |
-| ESA WorldCover 2021              | `ESA/WorldCover/v200/2021`                                    | Permanent water (class 80); optional dark-land classes 50/60 (runways) |
-| JRC Global Surface Water         | `JRC/GSW1_4/GlobalSurfaceWater` `occurrence`                  | Permanent / frequent water                                             |
-| Sentinel-2 RGB (optional figure) | `COPERNICUS/S2_SR_HARMONIZED`                                 | Context RGB, not the flood classifier                                  |
+| Input                            | Collection / product                                                                                                                              | Role                                                                                                                        |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Sentinel-1 event stack           | `COPERNICUS/S1_GRD` IW, 10 m, `START_DATE`–`END_DATE`                                                                                             | Event composite; `WI_event = VV_dB + VH_dB`                                                                                 |
+| Sentinel-1 historical stack      | Same collection, `HIST_LOOKBACK_YEARS` ending at `START_DATE`                                                                                     | Mean WI before the event (`WI_hist`). Event window is excluded                                                              |
+| FABDEM (bare-earth DEM)          | `projects/sat-io/open-datasets/FABDEM`                                                                                                            | Elevation, slope, sea (nodata). GLO-30 with buildings/trees removed                                                         |
+| ESA WorldCover 2021              | `ESA/WorldCover/v200/2021`                                                                                                                        | Permanent water (class 80); optional dark-land classes 50/60 (runways)                                                      |
+| JRC Global Surface Water         | `JRC/GSW1_4/GlobalSurfaceWater` `occurrence`                                                                                                      | Permanent / frequent water                                                                                                  |
+| Sentinel-2 RGB (optional figure) | `COPERNICUS/S2_SR_HARMONIZED`                                                                                                                     | Context RGB, not the flood classifier                                                                                       |
 | LINZ NZ Building Outlines        | [LINZ layer 101290](https://data.linz.govt.nz/layer/101290-nz-building-outlines/), local shapefile at `data/nz-building/nz-building-outlines.shp` | Roof outlines (≥ 10 m²) from aerial imagery; counts buildings that touch the flood. Not on GEE; read locally with GeoPandas |
+| OpenStreetMap drive network      | Overpass via `osmnx` (`network_type="drive"`)                                                                                                     | Named roads, lanes, bridge/tunnel tags, and a connected graph for likely-closed / detour checks (notebook 5e)               |
 
 
 **How a pixel becomes flood**
@@ -51,7 +52,10 @@ Selecting a suitable site for logistics supply from sea, immediately following a
 6. **Clean** — minimum mapping unit, then a small morphological opening.
 7. **Vectorise** — `final_flood` → `flood_boundary` polygons (`reduceToVectors`, 40 m, eight-connected).
 8. **Building exposure** — LINZ outlines ∩ `flood_boundary` (see below).
-9. **Output** — flood raster, boundary polygons, area and building stats, three-panel figure.
+9. **Road exposure (notebook)** — OSM drive edges ∩ `flood_boundary`; likely-closed names, inundated carriageway area, in-AOI detours (see below). Not yet in the UI pipeline.
+10. **Output** — flood raster, boundary polygons, area / building / road stats, 2×2 figure.
+
+
 
 ### Counting affected buildings (LINZ ∩ flood)
 
@@ -63,16 +67,47 @@ Code: `processing/buildings.py`, used by notebook section 5d and the UI pipeline
 4. **Intersect.** `gpd.sjoin(buildings, flood, predicate="intersects")`. A building counts once if **any part** of its roof outline touches flood water; duplicates from multiple flood polygons are dropped on `building_i`. This is `buildings_affected`.
 5. **Footprint area.** The affected outlines are overlaid with the flood polygons in **NZTM2000** (`EPSG:2193`) so the wetted roof area is in square metres (`buildings_affected_footprint_km2`). The count itself does not depend on the CRS.
 
-| Stat key | Meaning |
-| --- | --- |
-| `buildings_in_aoi` | LINZ outlines inside the AOI rectangle |
-| `buildings_affected` | Outlines intersecting `flood_boundary` |
-| `buildings_affected_pct` | `buildings_affected / buildings_in_aoi × 100` |
-| `buildings_affected_footprint_km2` | Area of outline ∩ flood, NZTM2000 |
 
-The figure's third panel draws flood in yellow, AOI outlines in grey and affected outlines in red. The notebook map adds only the affected outlines as a layer (uploading every AOI outline to Earth Engine is slow).
+| Stat key                           | Meaning                                       |
+| ---------------------------------- | --------------------------------------------- |
+| `buildings_in_aoi`                 | LINZ outlines inside the AOI rectangle        |
+| `buildings_affected`               | Outlines intersecting `flood_boundary`        |
+| `buildings_affected_pct`           | `buildings_affected / buildings_in_aoi × 100` |
+| `buildings_affected_footprint_km2` | Area of outline ∩ flood, NZTM2000             |
+
+
+The figure's bottom-left panel draws flood in yellow, AOI outlines in grey and affected outlines in red. The notebook map adds only the affected outlines as a layer (uploading every AOI outline to Earth Engine is slow).
 
 **Read these numbers as exposure, not damage.** A building is counted even if only its edge touches a 10–40 m flood pixel, so the count leans high near flood boundaries. Outlines include garages and sheds and are not households. They also reflect the imagery date (for Hawke's Bay, 2023–2024), so buildings demolished after Gabrielle may still appear.
+
+### Detecting likely-closed roads (OSM ∩ flood)
+
+Code: notebook section **5e** in `01_sentinel1_layer.ipynb` (`osmnx` + GeoPandas + NetworkX). This is **not** in `processing/pipeline.py` or the map UI yet.
+
+OSM is used instead of LINZ Topo50 because drive edges form a **connected graph**, with `name`, `highway`, `lanes`, `bridge`, and `tunnel`. That lets the notebook (1) skip elevated crossings that only look flooded because the centreline crosses the river, and (2) search an in-AOI detour after flooded edges are removed.
+
+1. **Download.** `osmnx.graph_from_bbox` on `AOI_BOUNDS`, `network_type="drive"` (Overpass; first run needs network, later runs may use the OSMNx cache).
+2. **Ground roads.** Drop edges tagged `bridge` or `tunnel`. Length and area are computed in **NZTM2000** (`EPSG:2193`).
+3. **Intersect.** Flooded **length** = centreline ∩ `flood_boundary`. Flooded **area** = carriageway buffer ∩ flood. Buffer half-width = `lanes × 3.5 m / 2`, minimum 3.5 m.
+4. **Likely closed.** An edge is likely closed if flooded length ≥ **50 m** **or** flooded length / edge length ≥ **30%**. Short slivers at the SAR/vector edge are ignored. Names are aggregated from OSM `name` (unnamed ways stay `(unnamed)`).
+5. **Detour.** Copy the graph, remove every likely-closed edge, then `networkx.shortest_path` between the endpoints of the longest flooded edge per name. If a path exists, extra metres versus the original edge are stored; if not, the AOI graph has no alternative (the road may still be reachable from outside the box).
+
+
+| Stat key                                        | Meaning                                         |
+| ----------------------------------------------- | ----------------------------------------------- |
+| `roads_in_aoi_km`                               | OSM drive centreline length in the AOI          |
+| `roads_flooded_km`                              | Centreline length intersecting `flood_boundary` |
+| `roads_flooded_area_km2`                        | Carriageway buffer ∩ flood, NZTM2000            |
+| `roads_likely_closed_edges`                     | Edges meeting the 50 m / 30% rule               |
+| `roads_likely_closed_names`                     | Count of unique OSM names among those edges     |
+| `roads_likely_closed_name_list`                 | Those names, longest flooded first              |
+| `roads_likely_unclosed_name_list`               | Remaining ground-road names, longest first      |
+| `roads_with_aoi_detour` / `roads_no_aoi_detour` | Names with / without an in-AOI alternative      |
+
+
+The figure's bottom-right panel draws flood in yellow, **likely unclosed** roads in teal, and **likely closed** roads in magenta. The notebook map adds the closed edges as a magenta layer.
+
+**Read these as a geometric/network proxy, not an official closure list.** SAR flood pixels are 10–40 m; a centreline has no width. Bridges can still be misclassified if OSM tags are missing. In-AOI “no detour” does not mean the rest of Hawke’s Bay is unreachable. Official NZTA / council closures are a different dataset.
 
 Defaults: `HIST_LOOKBACK_YEARS = 2`, `WI_CHANGE_MIN_DB = 4` (WI is VV+VH, so about 2 dB per polarisation). Both live in `notebooks/layer_config.py` and `processing/defaults.py`.
 
@@ -82,9 +117,9 @@ SAR is used because it works through cloud (storms/cyclones). Sentinel-2 is a se
 
 ### Example program output figure
 
-The generated comparison figure shows the Sentinel-1 VV composite on the left, the water index with the final flood extent overlaid in yellow on the middle and affected LINZ affected building map on the right.
+The generated comparison figure is a **2 × 2** grid: Sentinel-1 VV (top left), water index with `final_flood` in yellow (top right), LINZ buildings ∩ flood (bottom left), OSM likely-closed vs likely-unclosed roads (bottom right).
 
-![Sentinel-1 flood-mapping program output](assets/s1_output2.png)
+![Sentinel-1 flood-mapping program output](assets/s1_outout3.png)
 
 ---
 
@@ -103,7 +138,7 @@ Two Sentinel-1 stacks share one AOI and the same Lee / terrain-flatten steps:
 | Historical | `START_DATE − HIST_LOOKBACK_YEARS` → `START_DATE` | `WI_hist` (mean of all scenes in the lookback) |
 
 
-Flood candidates are the **intersection**: currently water **and** darker than history (`ΔWI = WI_hist − WI_event > WI_CHANGE_MIN_DB`). Sentinel-2 is optional optical context, not the flood classifier. The comparison figure is event Sentinel-1 VV and water index with `final_flood` overlaid.
+Flood candidates are the **intersection**: currently water **and** darker than history (`ΔWI = WI_hist − WI_event > WI_CHANGE_MIN_DB`). Sentinel-2 is optional optical context, not the flood classifier. The comparison figure is a 2×2 of event Sentinel-1 VV, water index with `final_flood`, LINZ buildings, and OSM likely-closed roads (notebook). The UI figure still follows the older three-panel layout until roads are ported.
 
 ```mermaid
 flowchart TD
@@ -115,6 +150,7 @@ flowchart TD
     JRC["JRC GSW occurrence"]
     S2["Sentinel-2 RGB optional"]
     LINZ["LINZ building outlines (local shapefile)"]
+    OSM["OSM drive network (osmnx)"]
   end
   subgraph PRE["Prep (same for both stacks)"]
     CLIP["Clip rectangular AOI"]
@@ -144,8 +180,9 @@ flowchart TD
     FF["final_flood raster"]
     POLY["flood_boundary polygons"]
     BLD["buildings_affected = LINZ outlines intersecting flood_boundary"]
-    STAT["area and building statistics"]
-    MAP["geemap + VV, WI + flood, buildings panel"]
+    RD["likely-closed OSM roads ∩ flood_boundary (notebook 5e)"]
+    STAT["area, building, and road statistics"]
+    MAP["geemap + 2x2: VV, WI+flood, buildings, roads"]
   end
   S1E --> CLIP
   S1H --> CLIP
@@ -172,8 +209,12 @@ flowchart TD
   FF --> STAT
   POLY --> BLD
   LINZ --> BLD
+  POLY --> RD
+  OSM --> RD
   BLD --> STAT
+  RD --> STAT
   BLD --> MAP
+  RD --> MAP
   S2 --> MAP
   FF --> MAP
   POLY --> MAP
@@ -227,7 +268,7 @@ Dark layout, gold accent. Team name **Geographically Informed Speculators** in t
 | Header     | Team name and optional logo                                                                                                                                                                                                                                                                                        |
 | Left panel | Native date pickers (start, end, optional peak; default peak is the window midpoint). Half-width (km) for click-to-centre mode. **Max slope (°)** and **max elevation (m)** (defaults `SLOPE_MAX_DEG=10`, `ELEVATION_MAX_M=25`). Run button. Live **progress** under the button: bar, `Step n/10: …`, elapsed time |
 | Map        | OpenStreetMap. **Click** places a gold rectangle of ± half-width km. Leaflet.draw **rectangle** tool for a custom box. Selected bounds are shown as text                                                                                                                                                           |
-| Results    | Same figure as notebook section 5c (third panel = LINZ buildings intersecting flood, if the shapefile is present), then a **Key Flood Statistics** table: final flood area, share of AOI, buildings in AOI, buildings intersecting flood, % affected, flooded urban area |
+| Results    | Same figure as notebook section 5c (third panel = LINZ buildings intersecting flood, if the shapefile is present), then a **Key Flood Statistics** table: final flood area, share of AOI, buildings in AOI, buildings intersecting flood, % affected, flooded urban area                                           |
 
 
 Defaults match Cyclone Gabrielle at Hawke’s Bay Airport: 2023-02-01 → 2023-02-25, peak 2023-02-15, 5 km half-width, map centred at about `[-39.471, 176.869]`. Terrain defaults are **10°** max slope and **25 m** max elevation (`GET /api/defaults` loads these from `processing/defaults.py`).
@@ -237,16 +278,16 @@ Defaults match Cyclone Gabrielle at Hawke’s Bay Airport: 2023-02-01 → 2023-0
 These controls are sent with `POST /api/run`. They replace the notebook’s `START_DATE` / `END_DATE` / `MAP_CENTER` / `AOI_RADIUS_KM` / `SLOPE_MAX_DEG` / `ELEVATION_MAX_M`. Other thresholds (`WATER_INDEX_MAX_DB`, `HIST_LOOKBACK_YEARS`, `WI_CHANGE_MIN_DB`, `ELEVATION_ABOVE_P5_M`, MMU, and so on) stay in `processing/defaults.py`.
 
 
-| Control           | JSON field                       | Default                               | Role                                                                                                                                      |
-| ----------------- | -------------------------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Start             | `start_date`                     | 2023-02-01                            | Inclusive start of the Sentinel-1 event window. Also the **end** of the historical lookback                                               |
-| End               | `end_date`                       | 2023-02-25                            | Exclusive-style end of that window (must be after start). Event SAR scenes in this range are composited                                   |
-| Peak              | `peak_date`                      | 2023-02-15                            | Date used to pick the closest Sentinel-1 scene for metadata. If empty, the midpoint of start–end is used                                  |
-| Map click         | `center_lat`, `center_lon`       | none (click required unless you draw) | Centre of an axis-aligned rectangle. Builds the AOI together with half-width                                                              |
-| Half-width (km)   | `half_km`                        | 5                                     | Distance north/south/east/west from the click. Only used in click-to-centre mode (same idea as notebook `AOI_RADIUS_KM`)                  |
-| Draw rectangle    | `west`, `south`, `east`, `north` | none                                  | Custom AOI box. If you draw, these bounds are used and half-width is ignored                                                              |
-| Max slope (deg)   | `slope_max_deg`                  | 10                                    | Drop flood candidates on slopes **≥** this (steep ground is flood-implausible and layover/shadow-prone)                                   |
-| Max elevation (m) | `elevation_max_m`                | 25                                    | Drop flood candidates at or above this FABDEM height. A second relative cap (`ELEVATION_ABOVE_P5_M`) still applies in the backend          |
+| Control           | JSON field                       | Default                               | Role                                                                                                                              |
+| ----------------- | -------------------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Start             | `start_date`                     | 2023-02-01                            | Inclusive start of the Sentinel-1 event window. Also the **end** of the historical lookback                                       |
+| End               | `end_date`                       | 2023-02-25                            | Exclusive-style end of that window (must be after start). Event SAR scenes in this range are composited                           |
+| Peak              | `peak_date`                      | 2023-02-15                            | Date used to pick the closest Sentinel-1 scene for metadata. If empty, the midpoint of start–end is used                          |
+| Map click         | `center_lat`, `center_lon`       | none (click required unless you draw) | Centre of an axis-aligned rectangle. Builds the AOI together with half-width                                                      |
+| Half-width (km)   | `half_km`                        | 5                                     | Distance north/south/east/west from the click. Only used in click-to-centre mode (same idea as notebook `AOI_RADIUS_KM`)          |
+| Draw rectangle    | `west`, `south`, `east`, `north` | none                                  | Custom AOI box. If you draw, these bounds are used and half-width is ignored                                                      |
+| Max slope (deg)   | `slope_max_deg`                  | 10                                    | Drop flood candidates on slopes **≥** this (steep ground is flood-implausible and layover/shadow-prone)                           |
+| Max elevation (m) | `elevation_max_m`                | 25                                    | Drop flood candidates at or above this FABDEM height. A second relative cap (`ELEVATION_ABOVE_P5_M`) still applies in the backend |
 
 
 **Progress steps (shown under the button):** (1) initialise Earth Engine, (2) search Sentinel-1, (3) Sentinel-2 RGB, (4) DEM / WorldCover / JRC, (5) Lee + terrain flatten, (6) water index + Otsu + historical WI change, (7) elevation / slope / layover masks, (8) vectorise flood polygons, (9) area statistics and LINZ building intersection, (10) render figure. Earth Engine is lazy, so the bar can sit on steps 6, 7 and 9 for a while. Only **one** run at a time; a second job waits.
@@ -315,6 +356,7 @@ Jobs usually take **several minutes**. `--reload` picks up Python changes; refre
 | Optional U-Net surface water on 6-band Sentinel-2                | Lab 5 (deep learning idea: Lecture 5 / Lab 4) |
 | DEM keep low / flat pixels                                       | Extra GIS prior (not a 761 exercise)          |
 | LINZ building outlines ∩ flood (exposure count)                  | Project novelty (vector overlay)              |
+| OSM likely-closed roads ∩ flood (names, area, detour)            | Project novelty (notebook 5e; not in UI yet)  |
 | Fusion overlay                                                   | Project novelty                               |
 
 
@@ -334,7 +376,7 @@ GEOG761-GIS/
   assets/logo/                 # team logo (optional)
   notebooks/                   # GEE / geemap layer tests
     layer_config.py            # notebook AOI, dates, thresholds (incl. LINZ building path)
-    01_sentinel1_layer.ipynb   # S1 flood reference notebook
+    01_sentinel1_layer.ipynb   # S1 flood reference (5d buildings, 5e OSM roads)
     02_sentinel2_layer.ipynb
     03_dem_layer.ipynb
   data/nz-building/            # local LINZ NZ Building Outlines (not committed)

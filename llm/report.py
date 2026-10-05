@@ -38,6 +38,10 @@ How the map was made (use this to interpret, not to recap as a methods essay):
 - Permanent water removed (WorldCover 80, JRC occurrence, DEM nodata sea).
 - Low/flat ground from FABDEM (bare earth), not a DSM with buildings/trees.
 - Optional third panel: LINZ building outlines intersecting final_flood.
+- Road network from OSM; edges tagged bridge/tunnel are skipped from the
+  ground-road analysis (osm_bridge_tunnel_skipped). A road is "likely closed"
+  when its geometry intersects final_flood; "AOI detour" means an alternate
+  ground route exists within the AOI, as opposed to no in-AOI alternative.
 
 Analysis requirements:
 - Resolve lat/lon in meta to a named place (Hawke’s Bay, etc.) when the
@@ -51,21 +55,42 @@ Analysis requirements:
 - If building counts exist (buildings_affected, buildings_in_aoi, footprint),
   interpret exposure (share of AOI buildings, spatial concentration). These
   are roof outlines from imagery, not households or occupancy.
+- If road/network keys exist (roads_in_aoi_km, roads_flooded_km,
+  roads_flooded_area_km2, osm_edges_in_aoi, osm_ground_edges,
+  osm_bridge_tunnel_skipped, roads_likely_closed_edges,
+  roads_likely_closed_names, roads_with_aoi_detour, roads_no_aoi_detour,
+  roads_likely_closed_name_list): interpret network exposure, not just area.
+  Report what share of the road network is flooded (km and % of
+  roads_in_aoi_km), how many distinct named roads are likely closed versus
+  how many edges (one named road can span several edges), and what the
+  split between roads_with_aoi_detour and roads_no_aoi_detour implies for
+  access and isolation risk. create a table list for specific roads from
+  roads_likely_closed_name_list and when arguing about which corridors are cut select the ones that matter for
+  the argument (e.g. those with no AOI detour). Note that bridge/tunnel
+  edges are excluded from these counts, so true closures may be
+  undercounted where the real cut point is a bridge.
 - Discuss HA-DR implications: which parts of the AOI look inundated vs
-  usable for access; what the numbers do and do not support.
+  usable for access; which routes into/out of the flooded area remain open;
+  where road and building exposure overlap versus where they diverge
+  (e.g. buildings dry but access roads cut); what the numbers do and do
+  not support.
 - Limitations as they affect THIS analysis: speckle, lookback composite vs
   pair, WorldCover 2021, layover/shadow proxy, FABDEM residual error,
-  building-outline lag. Do not list them as a boilerplate dump.
+  building-outline lag, OSM completeness/currency, and closure inferred
+  from geometry intersection rather than confirmed road-condition reports.
+  Do not list them as a boilerplate dump.
 
 Rules:
 - Complete HTML only (html, head, body). No Markdown. No code fences.
 - <style> with readable typography (max-width article, tables).
 - Image placeholder exactly once: <img src="{{FIGURE}}" alt="Flood analysis figure">
 - Sections (<h1>/<h2>): always include Question and Key Flood Statistics
-  (a compact table of the JSON numbers that exist). Then include ONLY the
-  extra sections listed in the user message. Omit any section that is not listed. Do not
-  invent a Methods dump or a Results caption.
-- Use only numbers in the stats/meta JSON. Do not invent areas, counts, or dates.
+  (a compact table of the JSON numbers that exist, grouped by area/water,
+  buildings, and roads where applicable). Then include ONLY the extra
+  sections listed in the user message. Omit any section that is not listed.
+  Do not invent a Methods dump or a Results caption.
+- Use only numbers in the stats/meta JSON. Do not invent areas, counts,
+  road names, or dates.
 - Prefer argument over inventory: every paragraph should answer “so what?”.
 - No RAG. No Python. No API keys.
 """
