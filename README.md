@@ -34,7 +34,7 @@ Selecting a suitable site for logistics supply from sea, immediately following a
 | -------------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | Sentinel-1 event stack           | `COPERNICUS/S1_GRD` IW, 10 m, `START_DATE`–`END_DATE`         | Event composite; `WI_event = VV_dB + VH_dB`                            |
 | Sentinel-1 historical stack      | Same collection, `HIST_LOOKBACK_YEARS` ending at `START_DATE` | Mean WI before the event (`WI_hist`). Event window is excluded         |
-| Copernicus DEM GLO-30            | `COPERNICUS/DEM/GLO30`                                        | Elevation, slope, sea (nodata)                                         |
+| FABDEM (bare-earth DEM)          | `projects/sat-io/open-datasets/FABDEM`                        | Elevation, slope, sea (nodata). GLO-30 with buildings/trees removed    |
 | ESA WorldCover 2021              | `ESA/WorldCover/v200/2021`                                    | Permanent water (class 80); optional dark-land classes 50/60 (runways) |
 | JRC Global Surface Water         | `JRC/GSW1_4/GlobalSurfaceWater` `occurrence`                  | Permanent / frequent water                                             |
 | Sentinel-2 RGB (optional figure) | `COPERNICUS/S2_SR_HARMONIZED`                                 | Context RGB, not the flood classifier                                  |
@@ -46,7 +46,7 @@ Selecting a suitable site for logistics supply from sea, immediately following a
 2. **Event water** — dual-pol index `WI = VV_dB + VH_dB`. Water if `WI_event < Otsu(WI_event)` **and** `WI_event < WATER_INDEX_MAX_DB`.
 3. **Historical change** — `ΔWI = WI_hist − WI_event`. Keep pixels with `ΔWI > WI_CHANGE_MIN_DB` (`wi_anomalous`). Always-dark water and pavement stay near `ΔWI ≈ 0`; newly inundated land darkens.
 4. **Flood candidate** — `event_water` **and** `wi_anomalous`, then drop WorldCover 80, JRC occurrence ≥ threshold, DEM nodata (open sea), and optional WorldCover 50/60.
-5. **Terrain** — drop high ground (`ELEVATION_MAX_M` and optional height above AOI DEM p5) and slopes steeper than `SLOPE_MAX_DEG`; layover/shadow *risk proxy* from slope vs incidence angle.
+5. **Terrain** — drop high ground (`ELEVATION_MAX_M` and optional height above AOI FABDEM p5) and slopes steeper than `SLOPE_MAX_DEG`; layover/shadow *risk proxy* from slope vs incidence angle. Elevation is **FABDEM** (bare earth), not raw Copernicus GLO-30 (DSM with buildings/trees).
 6. **Clean** — minimum mapping unit, then a small morphological opening.
 7. **Output** — flood raster, boundary polygons, area stats, VV / WI+flood comparison figure.
 
@@ -86,7 +86,7 @@ flowchart TD
   subgraph IN["Inputs"]
     S1E["S1 event: START to END"]
     S1H["S1 historical: lookback years to START"]
-    DEM["Copernicus GLO-30 DEM"]
+    DEM["FABDEM bare-earth DEM"]
     WC["WorldCover 2021"]
     JRC["JRC GSW occurrence"]
     S2["Sentinel-2 RGB optional"]
@@ -216,7 +216,7 @@ These controls are sent with `POST /api/run`. They replace the notebook’s `STA
 | Half-width (km)   | `half_km`                        | 5                                     | Distance north/south/east/west from the click. Only used in click-to-centre mode (same idea as notebook `AOI_RADIUS_KM`)                  |
 | Draw rectangle    | `west`, `south`, `east`, `north` | none                                  | Custom AOI box. If you draw, these bounds are used and half-width is ignored                                                              |
 | Max slope (deg)   | `slope_max_deg`                  | 10                                    | Drop flood candidates on slopes **≥** this (steep ground is flood-implausible and layover/shadow-prone)                                   |
-| Max elevation (m) | `elevation_max_m`                | 25                                    | Drop flood candidates at or above this Copernicus DEM height. A second relative cap (`ELEVATION_ABOVE_P5_M`) still applies in the backend |
+| Max elevation (m) | `elevation_max_m`                | 25                                    | Drop flood candidates at or above this FABDEM height. A second relative cap (`ELEVATION_ABOVE_P5_M`) still applies in the backend          |
 
 
 **Progress steps (shown under the button):** (1) initialise Earth Engine, (2) search Sentinel-1, (3) Sentinel-2 RGB, (4) DEM / WorldCover / JRC, (5) Lee + terrain flatten, (6) water index + Otsu + historical WI change, (7) elevation / slope / layover masks, (8) vectorise flood polygons, (9) area statistics, (10) render figure. Earth Engine is lazy, so the bar can sit on steps 6, 7 and 9 for a while. Only **one** run at a time; a second job waits.

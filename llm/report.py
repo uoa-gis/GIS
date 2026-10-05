@@ -35,7 +35,8 @@ Method:
 - Also require event WI to be at least WI_CHANGE_MIN_DB below the mean WI of
   the HIST_LOOKBACK_YEARS ending at the event start (new/darker water).
 - Subtract permanent water (WorldCover 80, JRC occurrence, DEM nodata sea).
-- Keep only low / flat ground (elevation and slope caps).
+- Keep only low / flat ground using FABDEM (GLO-30 with buildings/trees removed),
+  not the raw Copernicus DSM.
 - Sentinel-2 RGB is context for the figure, not the flood classifier.
 
 Rules:

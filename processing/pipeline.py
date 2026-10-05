@@ -213,6 +213,18 @@ def compute_otsu(
     return float(threshold)
 
 
+def fabdem_elevation(aoi: ee.Geometry) -> ee.Image:
+    """FABDEM: Copernicus GLO-30 with building and tree height removed (~30 m).
+
+    GLO-30 itself is closer to a DSM (roofs/canopy). Using it as ground elevation
+    inflates heights in towns and forest and biases flood depth / elev_ok.
+    """
+    col = ee.ImageCollection("projects/sat-io/open-datasets/FABDEM").filterBounds(aoi)
+    # mosaic() drops the tile CRS; Terrain.slope needs a default projection.
+    dem = col.mosaic().select("b1").setDefaultProjection(col.first().projection())
+    return dem.clip(aoi).rename("elevation")
+
+
 def _area_km2(mask_img: ee.Image, aoi: ee.Geometry) -> float:
     m2 = (
         ee.Image.pixelArea()
@@ -503,13 +515,7 @@ def run_flood_mapping(
             s2_rgb = s2_use.map(mask_s2_clouds).median().clip(aoi)
 
         report(4, "Loading DEM, WorldCover and JRC permanent water")
-        dem = (
-            ee.ImageCollection("COPERNICUS/DEM/GLO30")
-            .select("DEM")
-            .mosaic()
-            .clip(aoi)
-            .rename("elevation")
-        )
+        dem = fabdem_elevation(aoi)
         slope_deg = ee.Terrain.slope(dem).rename("slope")
         worldcover = ee.Image("ESA/WorldCover/v200/2021").clip(aoi)
         urban_flag = worldcover.eq(50).rename("urban_flag")
@@ -593,7 +599,7 @@ def run_flood_mapping(
         if cfg.ELEVATION_ABOVE_P5_M is not None:
             p5 = dem_pct.get("elevation_p5")
             if p5 is None:
-                raise ValueError("DEM p5 is missing — check AOI has Copernicus GLO-30 coverage.")
+                raise ValueError("DEM p5 is missing — check AOI has FABDEM coverage.")
             rel_max = float(p5) + cfg.ELEVATION_ABOVE_P5_M
             elev_ok = elev_ok.And(dem.lte(rel_max).unmask(1)).rename("elev_ok")
 
