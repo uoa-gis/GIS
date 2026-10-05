@@ -35,15 +35,15 @@
         <h2>Event window</h2>
         <label>
           Start
-          <input type="date" id="startDate" value="2023-02-01" />
+          <input type="date" id="startDate" value="2023-02-12" />
         </label>
         <label>
           End
-          <input type="date" id="endDate" value="2023-02-25" />
+          <input type="date" id="endDate" value="2023-02-16" />
         </label>
         <label>
           Peak (optional; default is the midpoint)
-          <input type="date" id="peakDate" value="2023-02-15" />
+          <input type="date" id="peakDate" value="2023-02-14" />
         </label>
 
         <h2>Area of interest</h2>
@@ -100,17 +100,27 @@
     <section class="results">
       <h2>Figure</h2>
       <p class="hint">
-        Same two-panel figure as the last cells of
-        <code>01_sentinel1_layer.ipynb</code>: Sentinel-1 VV, and water index +
-        final flood. Stats below are JSON-ready for a later report.
+        Sentinel-1 VV, water index + final flood, and LINZ buildings intersecting
+        flood when that layer is available.
       </p>
       <img id="figure" alt="Flood comparison figure" hidden />
-      <h2>Stats</h2>
-      <pre id="stats" class="mono"></pre>
+      <h2>Key Flood Statistics</h2>
+      <table id="keyStats" class="key-stats" hidden>
+        <thead>
+          <tr>
+            <th>Indicator</th>
+            <th>Value</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <div id="analysisWrap" hidden>
+        <iframe id="analysisFrame" title="Flood analysis"></iframe>
+      </div>
     </section>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=keystats"></script>
   </body>
 </html>

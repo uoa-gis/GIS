@@ -24,4 +24,12 @@ WI_CHANGE_MIN_DB = 4.0
 EXCLUDE_WORLDCOVER_CLASSES: tuple[int, ...] = ()
 VECTOR_SCALE = 40
 AREA_SCALE = 20
+BUILDING_OUTLINES_PATH = "data/nz-building/nz-building-outlines.shp"
 THUMB_DIMENSIONS = 768
+
+# Keep in sync with notebooks/layer_config.py. UI always shows the figure
+# and Key Flood Statistics; these flags add Gemini HTML sections below.
+REPORT_ANALYSIS = False
+REPORT_IMPLICATIONS = False
+REPORT_UNCERTAINTIES = False
+REPORT_CONCLUSION = False

@@ -166,6 +166,51 @@ button:disabled {
   background: #000;
 }
 
+.key-stats {
+  border-collapse: collapse;
+  width: min(640px, 100%);
+  margin: 0.4rem 0 1.2rem;
+  font-size: 0.95rem;
+}
+
+.key-stats thead th {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--accent);
+}
+
+.key-stats th,
+.key-stats td {
+  border-bottom: 1px solid var(--border);
+  padding: 0.55rem 0.7rem;
+  text-align: left;
+}
+
+.key-stats tbody th {
+  color: var(--muted);
+  font-weight: 500;
+  width: 58%;
+}
+
+.key-stats td {
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+#analysisWrap {
+  margin-top: 1rem;
+}
+
+#analysisFrame {
+  width: 100%;
+  min-height: 70vh;
+  border: 1px solid var(--border);
+  background: #fff;
+}
+
 @media (max-width: 860px) {
   .layout {
     grid-template-columns: 1fr;

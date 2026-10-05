@@ -19,8 +19,8 @@ MAP_ZOOM = 11
 
 # Short window so S1 and S2 can be checked quickly. Edit if a collection is empty.
 # Change the dates to the dates of the flood event
-# MAP_CENTER = [-39.58, 176.88]  # Grassland below the river
-MAP_CENTER = [-39.4829, 176.88]  # Hawke's Bay Airport
+MAP_CENTER = [-39.58, 176.88]  # Grassland below the river
+# MAP_CENTER = [-39.4829, 176.88]  # Hawke's Bay Airport
 START_DATE = "2023-02-12"
 END_DATE = "2023-02-16"
 FLOOD_PEAK_DATE = "2023-02-14"  # Cyclone Gabrielle (https://www.reuters.com/business/environment/cyclone-gabrielle-causes-havoc-new-zealand-firefighter-missing-2023-02-13/)
@@ -66,3 +66,13 @@ WI_CHANGE_MIN_DB = 4.0
 # in these classes will also be excluded.
 # EXCLUDE_WORLDCOVER_CLASSES = (50, 60)
 EXCLUDE_WORLDCOVER_CLASSES = ()
+
+# LINZ NZ Building Outlines (local download; shapefile sidecars are gitignored).
+BUILDING_OUTLINES_PATH = "data/nz-building/nz-building-outlines.shp"
+
+# UI always shows the figure and Key Flood Statistics.
+# Extra Gemini HTML sections (notebook report + UI below the stats table):
+REPORT_ANALYSIS = False
+REPORT_IMPLICATIONS = False
+REPORT_UNCERTAINTIES = False
+REPORT_CONCLUSION = False

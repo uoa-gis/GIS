@@ -162,18 +162,65 @@ async function poll(jobId) {
   }
 }
 
+const KEY_STATS = [
+  ["Final flood extent", "flood_final_km2", "km²"],
+  ["Flood share of AOI", "flood_pct_of_aoi", "%"],
+  ["AOI area", "aoi_km2", "km²"],
+  ["Buildings intersecting flood", "buildings_affected", ""],
+  ["Buildings in AOI", "buildings_in_aoi", ""],
+  ["Affected buildings", "buildings_affected_pct", "%"],
+  ["Flooded urban area", "flooded_urban_km2", "km²"],
+];
+
+function formatStat(value, unit) {
+  if (typeof value !== "number" || Number.isNaN(value)) return String(value);
+  const abs = Math.abs(value);
+  let text;
+  if (Number.isInteger(value) || abs >= 100) text = value.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  else if (abs >= 1) text = value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  else text = value.toLocaleString(undefined, { maximumFractionDigits: 4 });
+  return unit ? `${text} ${unit}` : text;
+}
+
+function renderKeyStats(stats) {
+  const table = document.getElementById("keyStats");
+  const tbody = table.querySelector("tbody");
+  tbody.replaceChildren();
+  if (!stats) {
+    table.hidden = true;
+    return;
+  }
+  let any = false;
+  for (const [label, key, unit] of KEY_STATS) {
+    if (!(key in stats) || stats[key] == null) continue;
+    any = true;
+    const tr = document.createElement("tr");
+    const th = document.createElement("th");
+    th.scope = "row";
+    th.textContent = label;
+    const td = document.createElement("td");
+    td.textContent = formatStat(stats[key], unit);
+    tr.append(th, td);
+    tbody.append(tr);
+  }
+  table.hidden = !any;
+}
+
 document.getElementById("runBtn").addEventListener("click", async () => {
   const btn = document.getElementById("runBtn");
   const statusEl = document.getElementById("status");
   const fig = document.getElementById("figure");
-  const statsEl = document.getElementById("stats");
+  const analysisWrap = document.getElementById("analysisWrap");
+  const analysisFrame = document.getElementById("analysisFrame");
   try {
     const body = payload();
     btn.disabled = true;
     statusEl.textContent = "";
     showProgress(null, Date.now());
     fig.hidden = true;
-    statsEl.textContent = "";
+    renderKeyStats(null);
+    analysisWrap.hidden = true;
+    analysisFrame.removeAttribute("srcdoc");
     const start = await fetch("/api/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -189,11 +236,11 @@ document.getElementById("runBtn").addEventListener("click", async () => {
     statusEl.textContent = "Done.";
     fig.src = `data:image/png;base64,${result.figure_png_base64}`;
     fig.hidden = false;
-    statsEl.textContent = JSON.stringify(
-      { stats: result.stats, meta: result.meta, report: result.report },
-      null,
-      2
-    );
+    renderKeyStats(result.stats);
+    if (result.report) {
+      analysisFrame.srcdoc = result.report;
+      analysisWrap.hidden = false;
+    }
   } catch (err) {
     statusEl.textContent = err.message || String(err);
   } finally {

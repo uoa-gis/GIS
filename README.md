@@ -301,11 +301,12 @@ GEOG761-GIS/
   pyproject.toml
   .env.example                 # EE_PROJECT
   assets/logo/                 # team logo (optional)
-  notebooks/                   # GEE / geemap layer tests (unchanged for the UI)
-    layer_config.py            # notebook AOI, dates, thresholds
+  notebooks/                   # GEE / geemap layer tests
+    layer_config.py            # notebook AOI, dates, thresholds (incl. LINZ building path)
     01_sentinel1_layer.ipynb   # S1 flood reference notebook
     02_sentinel2_layer.ipynb
     03_dem_layer.ipynb
+  data/nz-building/            # local LINZ NZ Building Outlines (not committed)
   processing/                  # UI backend: same S1 flood flow as 01_
   ui/                          # FastAPI + Leaflet calendar / map
     app.py

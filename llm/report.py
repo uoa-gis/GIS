@@ -1,4 +1,4 @@
-"""HTML flood report from the comparison figure and area stats.
+"""HTML flood **analysis** from the comparison figure and area stats.
 
 Uses Google Gemini. The API key is loaded from the repo-root ``.env``
 (``GEMINI_KEY`` or ``GOOGLE_API_KEY``). This module is independent of
@@ -22,35 +22,52 @@ load_dotenv(_REPO_ROOT / ".env")
 
 DEFAULT_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 
-_SYSTEM = """You write an explainable flood / inundation briefing as HTML for a
-GEOG761 HA-DR (humanitarian assistance / disaster relief) project.
+_SYSTEM = """You are an analyst for a GEOG761 HA-DR (humanitarian assistance /
+disaster relief) project, team Geographically Informed Speculators.
 
-Team: Geographically Informed Speculators.
-Audience: a partner choosing a sea-logistics or beach-landing site after a storm.
+Task: ANALYSE the attached flood figure together with the stats/meta JSON.
+Do not write a caption-style description of “what the panels show”. Use the
+image and the numbers as evidence: compare, interpret, and judge what the
+mapping implies for a partner choosing a sea-logistics or beach-landing site.
 
-Method:
-- Event Sentinel-1 GRD IW VV+VH (descending, 10 m).
-- Dual-pol water index WI = VV_dB + VH_dB.
-- Event water = WI below Otsu(WI) AND WI below a fixed dB cap.
-- Also require event WI to be at least WI_CHANGE_MIN_DB below the mean WI of
-  the HIST_LOOKBACK_YEARS ending at the event start (new/darker water).
-- Subtract permanent water (WorldCover 80, JRC occurrence, DEM nodata sea).
-- Keep only low / flat ground using FABDEM (GLO-30 with buildings/trees removed),
-  not the raw Copernicus DSM.
-- Sentinel-2 RGB is context for the figure, not the flood classifier.
+How the map was made (use this to interpret, not to recap as a methods essay):
+- Event Sentinel-1 GRD IW VV+VH (~10 m); WI = VV_dB + VH_dB.
+- Event water = WI < Otsu(WI) AND WI < a fixed dB cap.
+- New/darker water: event WI at least WI_CHANGE_MIN_DB below the mean WI of
+  HIST_LOOKBACK_YEARS ending at event start (not a matched pre-event pair).
+- Permanent water removed (WorldCover 80, JRC occurrence, DEM nodata sea).
+- Low/flat ground from FABDEM (bare earth), not a DSM with buildings/trees.
+- Optional third panel: LINZ building outlines intersecting final_flood.
+
+Analysis requirements:
+- Resolve lat/lon in meta to a named place (Hawke’s Bay, etc.) when the
+  coordinates allow; do not invent a place if they do not.
+- Read the figure: dark SAR vs WI colour, where yellow flood sits, whether
+  buildings (if present) cluster on flood or on the edge. Tie each claim to
+  a number in stats or a visible pattern in the image.
+- Treat stats as a funnel. Analyse shrinkage (event water → change mask →
+  candidate → terrain/MMU → final). Say what a large drop at a step means
+  (permanent water vs slope vs MMU), using only keys that exist in JSON.
+- If building counts exist (buildings_affected, buildings_in_aoi, footprint),
+  interpret exposure (share of AOI buildings, spatial concentration). These
+  are roof outlines from imagery, not households or occupancy.
+- Discuss HA-DR implications: which parts of the AOI look inundated vs
+  usable for access; what the numbers do and do not support.
+- Limitations as they affect THIS analysis: speckle, lookback composite vs
+  pair, WorldCover 2021, layover/shadow proxy, FABDEM residual error,
+  building-outline lag. Do not list them as a boilerplate dump.
 
 Rules:
-- Return a complete HTML document only (html, head, body). No Markdown. No code fences.
-- You have to convert the input Geo points to the actual location in the report.
-- Include a <style> block with simple readable typography (max-width article, tables).
-- Put an image placeholder exactly once: <img src="{{FIGURE}}" alt="Flood comparison figure">
-- Sections (use <h1>/<h2>): Introduction, Data, Methods, Results, Discussion, Conclusion, References.
-- Use only numbers present in the stats/meta JSON. Do not invent areas or dates.
-- In Results, explain the two-panel figure (left: Sentinel-1 VV with scale bar and north arrow; right: water index + final flood). Mention the Sentinel-1 acquisition time from meta if present.
-  and the stats funnel (event water → minus permanent → terrain → MMU → final).
-- State limitations: SAR speckle, historical mean WI is a multi-year composite
-  (not a matched pre-event pair), WorldCover 2021 baseline,
-  layover/shadow is a slope-vs-angle proxy, cloud may hide S2 RGB.
+- Complete HTML only (html, head, body). No Markdown. No code fences.
+- <style> with readable typography (max-width article, tables).
+- Image placeholder exactly once: <img src="{{FIGURE}}" alt="Flood analysis figure">
+- Sections (<h1>/<h2>): always include Question and Key Flood Statistics
+  (a compact table of the JSON numbers that exist). Then include ONLY the
+  extra sections listed in the user message (Analysis, Implications,
+  Uncertainties, Conclusion). Omit any section that is not listed. Do not
+  invent a Methods dump or a Results caption.
+- Use only numbers in the stats/meta JSON. Do not invent areas, counts, or dates.
+- Prefer argument over inventory: every paragraph should answer “so what?”.
 - No RAG. No Python. No API keys.
 """
 
@@ -120,19 +137,41 @@ def generate_flood_report(
     *,
     model: str | None = None,
     max_tokens: int = 8192,
+    include_analysis: bool = False,
+    include_implications: bool = False,
+    include_uncertainties: bool = False,
+    include_conclusion: bool = False,
 ) -> str:
-    """Ask Gemini to explain the flood figure using the area statistics.
+    """Ask Gemini to analyse the flood figure and area statistics.
 
+    Extra narrative sections follow the REPORT_* flags (layer_config / defaults).
     Returns a complete HTML document (figure embedded as a data URI).
     Does not print or log the API key.
     """
     from google.genai import types
 
+    extra = []
+    if include_analysis:
+        extra.append("Analysis")
+    if include_implications:
+        extra.append("Implications")
+    if include_uncertainties:
+        extra.append("Uncertainties")
+    if include_conclusion:
+        extra.append("Conclusion")
+    extra_line = (
+        "Also write these extra sections: " + ", ".join(extra) + "."
+        if extra
+        else "Do not write Analysis, Implications, Uncertainties, or Conclusion."
+    )
+
     png = figure_to_png_bytes(figure)
     payload = {"stats": stats, "meta": meta or {}}
     user_text = (
-        "Write a complete HTML report that explains this figure using these "
-        "statistics and metadata. Output HTML only.\n\n"
+        "Analyse this figure with the JSON stats and metadata. Argue from the "
+        "evidence; do not merely describe the panels or restate the table. "
+        "Always include Question and a Key Flood Statistics table. "
+        f"{extra_line} Output a complete HTML document only.\n\n"
         f"```json\n{json.dumps(payload, indent=2, default=str)}\n```"
     )
     client = _client()

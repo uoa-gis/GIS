@@ -37,9 +37,9 @@ _run_lock = threading.Lock()
 class RunBody(BaseModel):
     """JSON body from the map UI."""
 
-    start_date: str = Field(..., examples=["2023-02-01"])
-    end_date: str = Field(..., examples=["2023-02-25"])
-    peak_date: str | None = Field(None, examples=["2023-02-15"])
+    start_date: str = Field(..., examples=["2023-02-12"])
+    end_date: str = Field(..., examples=["2023-02-16"])
+    peak_date: str | None = Field(None, examples=["2023-02-14"])
     west: float | None = None
     south: float | None = None
     east: float | None = None

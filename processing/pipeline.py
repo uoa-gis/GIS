@@ -56,6 +56,37 @@ import numpy as np
 from PIL import Image
 
 from processing import defaults as cfg
+from processing.buildings import (
+    draw_buildings_panel,
+    ee_fc_to_gdf,
+    intersect_buildings_with_flood,
+    load_buildings_in_bounds,
+    resolve_building_path,
+)
+
+
+def _report_section_flags() -> tuple[bool, bool, bool, bool]:
+    """Read REPORT_* from notebooks/layer_config.py (UI extra sections)."""
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[1] / "notebooks" / "layer_config.py"
+    spec = importlib.util.spec_from_file_location("_layer_config_report_flags", path)
+    if spec is None or spec.loader is None:
+        return (
+            bool(cfg.REPORT_ANALYSIS),
+            bool(cfg.REPORT_IMPLICATIONS),
+            bool(cfg.REPORT_UNCERTAINTIES),
+            bool(cfg.REPORT_CONCLUSION),
+        )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return (
+        bool(getattr(mod, "REPORT_ANALYSIS", False)),
+        bool(getattr(mod, "REPORT_IMPLICATIONS", False)),
+        bool(getattr(mod, "REPORT_UNCERTAINTIES", False)),
+        bool(getattr(mod, "REPORT_CONCLUSION", False)),
+    )
 
 
 @dataclass
@@ -394,6 +425,11 @@ def _figure_png_b64(
     flood_km2: float,
     aoi_km2: float,
     flooded_urban_km2: float,
+    bounds: list[float] | None = None,
+    flood_gdf=None,
+    buildings_aoi=None,
+    buildings_affected=None,
+    n_buildings_affected: int | None = None,
 ) -> str:
     import base64
 
@@ -404,16 +440,28 @@ def _figure_png_b64(
     left = _ee_thumb_array(left_img, None, aoi, cfg.THUMB_DIMENSIONS)
     right = _ee_thumb_array(right_img, None, aoi, cfg.THUMB_DIMENSIONS)
 
-    fig, axes = plt.subplots(1, 2, figsize=(12.5, 6.6))
+    show_buildings = bounds is not None and buildings_aoi is not None
+    ncols = 3 if show_buildings else 2
+    fig, axes = plt.subplots(1, ncols, figsize=(17.5 if show_buildings else 12.5, 6.6))
+    if ncols == 2:
+        axes = list(axes)
     axes[0].imshow(left)
     axes[0].set_title(f"Sentinel-1 VV (dB)\nS1 closest to peak: {s1_when}")
     axes[1].imshow(right)
     axes[1].set_title(f"Water index (VV+VH) + final flood\nS1 closest to peak: {s1_when}")
-    for ax in axes:
-        ax.set_axis_off()
+    axes[0].set_axis_off()
+    axes[1].set_axis_off()
     _add_scale_bar(axes[0], width_km)
     _add_north_arrow(axes[0])
     _add_flood_legend(axes[1])
+    if show_buildings:
+        draw_buildings_panel(
+            axes[2],
+            bounds,
+            flood_gdf if flood_gdf is not None else buildings_aoi.iloc[0:0],
+            buildings_aoi,
+            buildings_affected if buildings_affected is not None else buildings_aoi.iloc[0:0],
+        )
     center_str = f"[{center[0]:.4f}, {center[1]:.4f}]"
     fig.suptitle(
         f"{center_str}  |  ±{width_km / 2:.1f} km  |  {start} → {end}\n"
@@ -421,15 +469,20 @@ def _figure_png_b64(
         fontsize=10,
     )
     pct = 100 * flood_km2 / aoi_km2 if aoi_km2 else 0.0
+    urban_pct = 100 * flooded_urban_km2 / flood_km2 if flood_km2 else 0.0
+    bldg_txt = ""
+    if n_buildings_affected is not None:
+        bldg_txt = f" LINZ buildings intersecting flood: {n_buildings_affected:,}."
     fig.text(
         0.5,
         0.01,
         f"Figure: Final flood extent (yellow) = {flood_km2 * 1e6:,.0f} m² "
         f"({flood_km2:,.2f} km², {pct:.1f}% of the {aoi_km2:,.1f} km² AOI). "
-        f"Urban flooded: {flooded_urban_km2:,.2f} km² ({100 * flooded_urban_km2 / flood_km2:.1f}% of the flood)",
+        f"Urban flooded: {flooded_urban_km2:,.2f} km² ({urban_pct:.1f}% of the flood)."
+        f"{bldg_txt}",
         ha="center",
         va="bottom",
-        fontsize=12,
+        fontsize=11,
         wrap=True,
     )
     fig.tight_layout(rect=(0, 0.05, 1, 0.92))
@@ -656,6 +709,17 @@ def run_flood_mapping(
             100 * stats["flood_final_km2"] / stats["aoi_km2"] if stats["aoi_km2"] else 0.0
         )
 
+        flood_gdf = ee_fc_to_gdf(flood_boundary)
+        buildings_aoi = None
+        buildings_affected = None
+        bldg_path = resolve_building_path(cfg.BUILDING_OUTLINES_PATH)
+        if bldg_path is not None:
+            buildings_aoi = load_buildings_in_bounds(bldg_path, bounds)
+            buildings_affected, bldg_stats = intersect_buildings_with_flood(
+                buildings_aoi, flood_gdf
+            )
+            stats.update(bldg_stats)
+
         report(10, "Rendering comparison figure")
         w, s, e, n = bounds
         width_km = abs(e - w) * 111.32 * math.cos(math.radians((s + n) / 2.0))
@@ -673,6 +737,11 @@ def run_flood_mapping(
             stats["flood_final_km2"],
             stats["aoi_km2"],
             stats["flooded_urban_km2"],
+            bounds=bounds,
+            flood_gdf=flood_gdf,
+            buildings_aoi=buildings_aoi,
+            buildings_affected=buildings_affected,
+            n_buildings_affected=stats.get("buildings_affected"),
         )
         meta = {
             "gee_project": cfg.GEE_PROJECT,
@@ -703,6 +772,22 @@ def run_flood_mapping(
             "elevation_max_m": req.elevation_max_m,
             "notebook_equivalent": "notebooks/01_sentinel1_layer.ipynb",
         }
-        return FloodRunResult(ok=True, stats=stats, figure_png_base64=figure_b64, meta=meta, report=None)
+        html_report = None
+        analysis, implications, uncertainties, conclusion = _report_section_flags()
+        if analysis or implications or uncertainties or conclusion:
+            from llm.report import generate_flood_report
+
+            html_report = generate_flood_report(
+                stats,
+                figure_b64,
+                meta,
+                include_analysis=analysis,
+                include_implications=implications,
+                include_uncertainties=uncertainties,
+                include_conclusion=conclusion,
+            )
+        return FloodRunResult(
+            ok=True, stats=stats, figure_png_base64=figure_b64, meta=meta, report=html_report
+        )
     except Exception as exc:  # noqa: BLE001 — surface EE/user errors to the UI
         return FloodRunResult(ok=False, error=str(exc))
