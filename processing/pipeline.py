@@ -55,6 +55,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image
 
+from processing.ee_auth import initialize_ee, project_id
 from processing import defaults as cfg
 from processing.buildings import (
     draw_buildings_panel,
@@ -148,11 +149,11 @@ _ee_ready = False
 
 
 def ensure_ee() -> None:
-    """Initialise Earth Engine once per process."""
+    """Initialise Earth Engine once per process (service account or ADC)."""
     global _ee_ready
     if _ee_ready:
         return
-    ee.Initialize(project=cfg.GEE_PROJECT)
+    initialize_ee()
     _ee_ready = True
 
 
@@ -812,7 +813,7 @@ def run_flood_mapping(
             road_stats=road_stats,
         )
         meta = {
-            "gee_project": cfg.GEE_PROJECT,
+            "gee_project": project_id(),
             "bounds": bounds,
             "center_latlon": list(center),
             "start_date": start,

@@ -7,8 +7,13 @@ Numeric defaults match notebooks/layer_config.py.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
-# Earth Engine Cloud project (override with EE_PROJECT).
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+
+# Earth Engine Cloud project (override with EE_PROJECT in .env).
 GEE_PROJECT = os.environ.get("EE_PROJECT", "geog761-dongwook")
 
 SLOPE_MAX_DEG = 10

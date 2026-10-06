@@ -300,18 +300,17 @@ These controls are sent with `POST /api/run`. They replace the notebook’s `STA
 **Prerequisites**
 
 - Python ≥ 3.13 and [uv](https://docs.astral.sh/uv/)
-- A Google Earth Engine Cloud project you can use, and a one-time local login:
+- A Google Earth Engine Cloud project (`EE_PROJECT`) and a **service-account JSON** at `GOOGLE_APPLICATION_CREDENTIALS` (see `.env.example`). Interactive `earthengine authenticate` is only a fallback if that env var is unset.
 
 ```bash
-uv run earthengine authenticate
+# Copy .env.example to .env and set EE_PROJECT + GOOGLE_APPLICATION_CREDENTIALS
+# plus GEMINI_KEY if you want the HTML report.
 ```
 
 **Start the server** (from the repo root):
 
 ```bash
-# Optional; default is geog761-dongwook (see .env.example)
-export EE_PROJECT=geog761-dongwook
-
+# Values also come from repo-root .env (EE_PROJECT, GOOGLE_APPLICATION_CREDENTIALS).
 uv sync
 uv run uvicorn ui.app:app --reload --host 127.0.0.1 --port 8000
 ```

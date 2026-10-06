@@ -7,6 +7,12 @@ from __future__ import annotations
 
 import math
 import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Repo-root .env: EE_PROJECT, GOOGLE_APPLICATION_CREDENTIALS, GEMINI_KEY.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 # Earth Engine Cloud project (override with EE_PROJECT if set).
 GEE_PROJECT = os.environ.get("EE_PROJECT", "geog761-dongwook")
