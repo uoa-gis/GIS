@@ -170,9 +170,17 @@ const KEY_STATS = [
   ["Buildings in AOI", "buildings_in_aoi", ""],
   ["Affected buildings", "buildings_affected_pct", "%"],
   ["Flooded urban area", "flooded_urban_km2", "km²"],
+  ["Flooded road length", "roads_flooded_km", "km"],
+  ["Flooded carriageway area", "roads_flooded_area_km2", "km²"],
+  ["Likely closed roads", "roads_likely_closed_names", ""],
+  ["Roads with in-AOI detour", "roads_with_aoi_detour", ""],
+  ["Roads with no in-AOI detour", "roads_no_aoi_detour", ""],
 ];
 
 function formatStat(value, unit) {
+  if (Array.isArray(value)) {
+    return value.length ? value.join(", ") : "none";
+  }
   if (typeof value !== "number" || Number.isNaN(value)) return String(value);
   const abs = Math.abs(value);
   let text;
@@ -206,6 +214,43 @@ function renderKeyStats(stats) {
   table.hidden = !any;
 }
 
+function extraText(metres) {
+  if (metres == null || Number.isNaN(Number(metres))) return "—";
+  const m = Number(metres);
+  if (m >= 1000) return `${(m / 1000).toLocaleString(undefined, { maximumFractionDigits: 2 })} km`;
+  return `${m.toLocaleString(undefined, { maximumFractionDigits: 0 })} m`;
+}
+
+function renderDetours(stats) {
+  const table = document.getElementById("detourStats");
+  const heading = document.getElementById("detourHeading");
+  const hint = document.getElementById("detourHint");
+  const tbody = table.querySelector("tbody");
+  tbody.replaceChildren();
+  const rows = stats && Array.isArray(stats.roads_detours) ? stats.roads_detours : [];
+  const show = rows.length > 0;
+  table.hidden = !show;
+  heading.hidden = !show;
+  hint.hidden = !show;
+  if (!show) return;
+  for (const row of rows) {
+    const tr = document.createElement("tr");
+    const th = document.createElement("th");
+    th.scope = "row";
+    th.textContent = row.name || "(unnamed)";
+    const flooded = document.createElement("td");
+    flooded.textContent = extraText(row.flooded_length_m);
+    const status = document.createElement("td");
+    status.textContent = row.detour || "—";
+    const via = document.createElement("td");
+    via.textContent = row.detour_route || "—";
+    const extra = document.createElement("td");
+    extra.textContent = extraText(row.extra_length_m);
+    tr.append(th, flooded, status, via, extra);
+    tbody.append(tr);
+  }
+}
+
 document.getElementById("runBtn").addEventListener("click", async () => {
   const btn = document.getElementById("runBtn");
   const statusEl = document.getElementById("status");
@@ -219,6 +264,7 @@ document.getElementById("runBtn").addEventListener("click", async () => {
     showProgress(null, Date.now());
     fig.hidden = true;
     renderKeyStats(null);
+    renderDetours(null);
     analysisWrap.hidden = true;
     analysisFrame.removeAttribute("srcdoc");
     const start = await fetch("/api/run", {
@@ -237,6 +283,7 @@ document.getElementById("runBtn").addEventListener("click", async () => {
     fig.src = `data:image/png;base64,${result.figure_png_base64}`;
     fig.hidden = false;
     renderKeyStats(result.stats);
+    renderDetours(result.stats);
     if (result.report) {
       analysisFrame.srcdoc = result.report;
       analysisWrap.hidden = false;

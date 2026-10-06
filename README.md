@@ -39,7 +39,7 @@ Selecting a suitable site for logistics supply from sea, immediately following a
 | JRC Global Surface Water         | `JRC/GSW1_4/GlobalSurfaceWater` `occurrence`                                                                                                      | Permanent / frequent water                                                                                                  |
 | Sentinel-2 RGB (optional figure) | `COPERNICUS/S2_SR_HARMONIZED`                                                                                                                     | Context RGB, not the flood classifier                                                                                       |
 | LINZ NZ Building Outlines        | [LINZ layer 101290](https://data.linz.govt.nz/layer/101290-nz-building-outlines/), local shapefile at `data/nz-building/nz-building-outlines.shp` | Roof outlines (≥ 10 m²) from aerial imagery; counts buildings that touch the flood. Not on GEE; read locally with GeoPandas |
-| OpenStreetMap drive network      | Overpass via `osmnx` (`network_type="drive"`)                                                                                                     | Named roads, lanes, bridge/tunnel tags, and a connected graph for likely-closed / detour checks (notebook 5e)               |
+| OpenStreetMap drive network      | Overpass via `osmnx` (`network_type="drive"`)                                                                                                     | Named roads, lanes, bridge/tunnel tags, and a connected graph for likely-closed / detour checks (notebook 5e and UI)        |
 
 
 **How a pixel becomes flood**
@@ -52,7 +52,7 @@ Selecting a suitable site for logistics supply from sea, immediately following a
 6. **Clean** — minimum mapping unit, then a small morphological opening.
 7. **Vectorise** — `final_flood` → `flood_boundary` polygons (`reduceToVectors`, 40 m, eight-connected).
 8. **Building exposure** — LINZ outlines ∩ `flood_boundary` (see below).
-9. **Road exposure (notebook)** — OSM drive edges ∩ `flood_boundary`; likely-closed names, inundated carriageway area, in-AOI detours (see below). Not yet in the UI pipeline.
+9. **Road exposure** — OSM drive edges ∩ `flood_boundary`; likely-closed names, inundated carriageway area, in-AOI detours (notebook 5e and `processing/roads.py`).
 10. **Output** — flood raster, boundary polygons, area / building / road stats, 2×2 figure.
 
 
@@ -82,7 +82,7 @@ The figure's bottom-left panel draws flood in yellow, AOI outlines in grey and a
 
 ### Detecting likely-closed roads (OSM ∩ flood)
 
-Code: notebook section **5e** in `01_sentinel1_layer.ipynb` (`osmnx` + GeoPandas + NetworkX). This is **not** in `processing/pipeline.py` or the map UI yet.
+Code: `processing/roads.py`, used by notebook section 5e and the UI pipeline. Thresholds live in `processing/defaults.py` (`ROAD_CLOSED_MIN_LENGTH_M`, `ROAD_CLOSED_MIN_FRAC`, lane width, detour-name cap).
 
 OSM is used instead of LINZ Topo50 because drive edges form a **connected graph**, with `name`, `highway`, `lanes`, `bridge`, and `tunnel`. That lets the notebook (1) skip elevated crossings that only look flooded because the centreline crosses the river, and (2) search an in-AOI detour after flooded edges are removed.
 
@@ -103,6 +103,7 @@ OSM is used instead of LINZ Topo50 because drive edges form a **connected graph*
 | `roads_likely_closed_name_list`                 | Those names, longest flooded first              |
 | `roads_likely_unclosed_name_list`               | Remaining ground-road names, longest first      |
 | `roads_with_aoi_detour` / `roads_no_aoi_detour` | Names with / without an in-AOI alternative      |
+| `roads_detours`                                 | Per-name rows: flooded length, detour status, `detour_route` (named streets in order), extra metres |
 
 
 The figure's bottom-right panel draws flood in yellow, **likely unclosed** roads in teal, and **likely closed** roads in magenta. The notebook map adds the closed edges as a magenta layer.
@@ -138,7 +139,7 @@ Two Sentinel-1 stacks share one AOI and the same Lee / terrain-flatten steps:
 | Historical | `START_DATE − HIST_LOOKBACK_YEARS` → `START_DATE` | `WI_hist` (mean of all scenes in the lookback) |
 
 
-Flood candidates are the **intersection**: currently water **and** darker than history (`ΔWI = WI_hist − WI_event > WI_CHANGE_MIN_DB`). Sentinel-2 is optional optical context, not the flood classifier. The comparison figure is a 2×2 of event Sentinel-1 VV, water index with `final_flood`, LINZ buildings, and OSM likely-closed roads (notebook). The UI figure still follows the older three-panel layout until roads are ported.
+Flood candidates are the **intersection**: currently water **and** darker than history (`ΔWI = WI_hist − WI_event > WI_CHANGE_MIN_DB`). Sentinel-2 is optional optical context, not the flood classifier. The comparison figure is a 2×2 of event Sentinel-1 VV, water index with `final_flood`, LINZ buildings, and OSM likely-closed roads.
 
 ```mermaid
 flowchart TD
@@ -180,7 +181,7 @@ flowchart TD
     FF["final_flood raster"]
     POLY["flood_boundary polygons"]
     BLD["buildings_affected = LINZ outlines intersecting flood_boundary"]
-    RD["likely-closed OSM roads ∩ flood_boundary (notebook 5e)"]
+    RD["likely-closed OSM roads ∩ flood_boundary"]
     STAT["area, building, and road statistics"]
     MAP["geemap + 2x2: VV, WI+flood, buildings, roads"]
   end
@@ -257,8 +258,8 @@ Dark layout, gold accent. Team name **Geographically Informed Speculators** in t
 │  progress bar    │                                          │
 │  step + elapsed  │                                          │
 ├──────────────────┴──────────────────────────────────────────┤
-│ Figure — S1 VV, WI + flood, LINZ buildings ∩ flood          │
-│ Key Flood Statistics — table (area, % AOI, buildings)       │
+│ Figure — 2×2: VV, WI+flood, LINZ buildings, OSM roads       │
+│ Key Flood Statistics — table (area, buildings, roads)       │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -268,7 +269,7 @@ Dark layout, gold accent. Team name **Geographically Informed Speculators** in t
 | Header     | Team name and optional logo                                                                                                                                                                                                                                                                                        |
 | Left panel | Native date pickers (start, end, optional peak; default peak is the window midpoint). Half-width (km) for click-to-centre mode. **Max slope (°)** and **max elevation (m)** (defaults `SLOPE_MAX_DEG=10`, `ELEVATION_MAX_M=25`). Run button. Live **progress** under the button: bar, `Step n/10: …`, elapsed time |
 | Map        | OpenStreetMap. **Click** places a gold rectangle of ± half-width km. Leaflet.draw **rectangle** tool for a custom box. Selected bounds are shown as text                                                                                                                                                           |
-| Results    | Same figure as notebook section 5c (third panel = LINZ buildings intersecting flood, if the shapefile is present), then a **Key Flood Statistics** table: final flood area, share of AOI, buildings in AOI, buildings intersecting flood, % affected, flooded urban area                                           |
+| Results    | Same 2×2 figure as notebook section 5c (LINZ buildings ∩ flood; OSM likely-closed vs unclosed roads), then a **Key Flood Statistics** table: flood area, share of AOI, buildings, flooded road length/area, likely-closed name count and names |
 
 
 Defaults match Cyclone Gabrielle at Hawke’s Bay Airport: 2023-02-01 → 2023-02-25, peak 2023-02-15, 5 km half-width, map centred at about `[-39.471, 176.869]`. Terrain defaults are **10°** max slope and **25 m** max elevation (`GET /api/defaults` loads these from `processing/defaults.py`).
@@ -290,7 +291,7 @@ These controls are sent with `POST /api/run`. They replace the notebook’s `STA
 | Max elevation (m) | `elevation_max_m`                | 25                                    | Drop flood candidates at or above this FABDEM height. A second relative cap (`ELEVATION_ABOVE_P5_M`) still applies in the backend |
 
 
-**Progress steps (shown under the button):** (1) initialise Earth Engine, (2) search Sentinel-1, (3) Sentinel-2 RGB, (4) DEM / WorldCover / JRC, (5) Lee + terrain flatten, (6) water index + Otsu + historical WI change, (7) elevation / slope / layover masks, (8) vectorise flood polygons, (9) area statistics and LINZ building intersection, (10) render figure. Earth Engine is lazy, so the bar can sit on steps 6, 7 and 9 for a while. Only **one** run at a time; a second job waits.
+**Progress steps (shown under the button):** (1) initialise Earth Engine, (2) search Sentinel-1, (3) Sentinel-2 RGB, (4) DEM / WorldCover / JRC, (5) Lee + terrain flatten, (6) water index + Otsu + historical WI change, (7) elevation / slope / layover masks, (8) vectorise flood polygons, (9) area statistics, LINZ buildings, and OSM likely-closed roads, (10) render figure. Earth Engine is lazy, so the bar can sit on steps 6, 7 and 9 for a while (step 9 also waits on Overpass). Only **one** run at a time; a second job waits.
 
 **Optional Gemini analysis:** set any of `REPORT_ANALYSIS`, `REPORT_IMPLICATIONS`, `REPORT_UNCERTAINTIES`, `REPORT_CONCLUSION` to `True` in `notebooks/layer_config.py` to add those HTML sections under the statistics table (needs `GEMINI_KEY` in `.env`). All `False` skips the Gemini call.
 
@@ -356,7 +357,7 @@ Jobs usually take **several minutes**. `--reload` picks up Python changes; refre
 | Optional U-Net surface water on 6-band Sentinel-2                | Lab 5 (deep learning idea: Lecture 5 / Lab 4) |
 | DEM keep low / flat pixels                                       | Extra GIS prior (not a 761 exercise)          |
 | LINZ building outlines ∩ flood (exposure count)                  | Project novelty (vector overlay)              |
-| OSM likely-closed roads ∩ flood (names, area, detour)            | Project novelty (notebook 5e; not in UI yet)  |
+| OSM likely-closed roads ∩ flood (names, area, detour)            | Project novelty (notebook 5e + UI pipeline)   |
 | Fusion overlay                                                   | Project novelty                               |
 
 
@@ -381,6 +382,8 @@ GEOG761-GIS/
     03_dem_layer.ipynb
   data/nz-building/            # local LINZ NZ Building Outlines (not committed)
   processing/                  # UI backend: same S1 flood flow as 01_
+    buildings.py               # LINZ outlines ∩ flood
+    roads.py                   # OSM drive ∩ flood (likely-closed, detours)
   ui/                          # FastAPI + Leaflet calendar / map
     app.py
     static/

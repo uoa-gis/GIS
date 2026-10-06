@@ -115,20 +115,36 @@ def intersect_buildings_with_flood(
 
 def draw_buildings_panel(
     ax,
-    bounds: list[float],
-    flood: gpd.GeoDataFrame,
-    buildings_aoi: gpd.GeoDataFrame,
-    buildings_affected: gpd.GeoDataFrame,
+    bounds: list[float] | None,
+    flood: gpd.GeoDataFrame | None,
+    buildings_aoi: gpd.GeoDataFrame | None,
+    buildings_affected: gpd.GeoDataFrame | None,
 ) -> None:
     """Map-style panel: flood fill + LINZ outlines (affected in red)."""
     from matplotlib.patches import Patch
 
-    west, south, east, north = bounds
-    if not flood.empty:
+    if bounds is None:
+        parts = [
+            g
+            for g in (flood, buildings_aoi, buildings_affected)
+            if g is not None and not g.empty
+        ]
+        if not parts:
+            ax.set_axis_off()
+            ax.text(0.5, 0.5, "LINZ buildings not available", ha="center", va="center")
+            return
+        west, south, east, north = parts[0].to_crs(WGS84).total_bounds
+        for g in parts[1:]:
+            minx, miny, maxx, maxy = g.to_crs(WGS84).total_bounds
+            west, south = min(west, minx), min(south, miny)
+            east, north = max(east, maxx), max(north, maxy)
+    else:
+        west, south, east, north = bounds
+    if flood is not None and not flood.empty:
         flood.to_crs(WGS84).plot(
             ax=ax, facecolor="#ffff00", edgecolor="none", alpha=0.45, zorder=1
         )
-    if not buildings_aoi.empty:
+    if buildings_aoi is not None and not buildings_aoi.empty:
         buildings_aoi.to_crs(WGS84).plot(
             ax=ax,
             facecolor="none",
@@ -136,7 +152,7 @@ def draw_buildings_panel(
             linewidth=0.25,
             zorder=2,
         )
-    if not buildings_affected.empty:
+    if buildings_affected is not None and not buildings_affected.empty:
         buildings_affected.to_crs(WGS84).plot(
             ax=ax,
             facecolor="#d73027",

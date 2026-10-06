@@ -59,16 +59,19 @@ Analysis requirements:
   roads_flooded_area_km2, osm_edges_in_aoi, osm_ground_edges,
   osm_bridge_tunnel_skipped, roads_likely_closed_edges,
   roads_likely_closed_names, roads_with_aoi_detour, roads_no_aoi_detour,
-  roads_likely_closed_name_list): interpret network exposure, not just area.
-  Report what share of the road network is flooded (km and % of
-  roads_in_aoi_km), how many distinct named roads are likely closed versus
-  how many edges (one named road can span several edges), and what the
-  split between roads_with_aoi_detour and roads_no_aoi_detour implies for
-  access and isolation risk. create a table list for specific roads from
-  roads_likely_closed_name_list and when arguing about which corridors are cut select the ones that matter for
-  the argument (e.g. those with no AOI detour). Note that bridge/tunnel
-  edges are excluded from these counts, so true closures may be
-  undercounted where the real cut point is a bridge.
+  roads_likely_closed_name_list, roads_detours): interpret network
+  exposure, not just area. Report what share of the road network is flooded
+  (km and % of roads_in_aoi_km), how many distinct named roads are likely
+  closed versus how many edges, and what the split between
+  roads_with_aoi_detour and roads_no_aoi_detour implies for access.
+  Include an HTML table of roads_detours (do not invent rows). Columns:
+  closed road name, flooded length (m), detour status, detour_route
+  (named streets in order, joined with arrows), extra_length_m (extra
+  metres vs the flooded edge). Use detour_route as the actual in-AOI
+  alternative path; empty detour_route with status "no alternative in AOI"
+  means the AOI graph has no bypass. "not computed (cap)" means the
+  search was skipped. Note that bridge/tunnel edges are excluded, so true
+  closures may be undercounted where the real cut is a bridge.
 - Discuss HA-DR implications: which parts of the AOI look inundated vs
   usable for access; which routes into/out of the flooded area remain open;
   where road and building exposure overlap versus where they diverge

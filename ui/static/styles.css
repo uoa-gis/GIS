@@ -200,6 +200,14 @@ button:disabled {
   color: var(--text);
 }
 
+.detour-stats {
+  width: min(1100px, 100%);
+}
+
+.detour-stats tbody th {
+  width: auto;
+}
+
 #analysisWrap {
   margin-top: 1rem;
 }

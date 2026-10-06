@@ -63,6 +63,7 @@ from processing.buildings import (
     load_buildings_in_bounds,
     resolve_building_path,
 )
+from processing.roads import classify_roads_with_flood, draw_roads_panel
 
 
 def _report_section_flags() -> tuple[bool, bool, bool, bool]:
@@ -135,7 +136,7 @@ class FloodRunResult:
     """JSON-serialisable outputs for the UI and a future Anthropic report."""
 
     ok: bool
-    stats: dict[str, float] = field(default_factory=dict)
+    stats: dict[str, Any] = field(default_factory=dict)
     figure_png_base64: str | None = None
     meta: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
@@ -411,6 +412,27 @@ def _add_flood_legend(ax) -> None:
     )
 
 
+def _wgs84_bounds(*gdfs) -> list[float] | None:
+    """[west, south, east, north] from GeoDataFrames, or None if empty."""
+    extents: list[tuple[float, float, float, float]] = []
+    for gdf in gdfs:
+        if gdf is None or getattr(gdf, "empty", True):
+            continue
+        geom = gdf.to_crs("EPSG:4326").geometry
+        if geom.empty:
+            continue
+        minx, miny, maxx, maxy = geom.total_bounds
+        if all(v == v for v in (minx, miny, maxx, maxy)):  # not NaN
+            extents.append((minx, miny, maxx, maxy))
+    if not extents:
+        return None
+    west = min(e[0] for e in extents)
+    south = min(e[1] for e in extents)
+    east = max(e[2] for e in extents)
+    north = max(e[3] for e in extents)
+    return [west, south, east, north]
+
+
 def _figure_png_b64(
     co_db: ee.Image,
     water_index: ee.Image,
@@ -430,6 +452,9 @@ def _figure_png_b64(
     buildings_aoi=None,
     buildings_affected=None,
     n_buildings_affected: int | None = None,
+    roads_open=None,
+    roads_closed=None,
+    road_stats: dict[str, Any] | None = None,
 ) -> str:
     import base64
 
@@ -440,28 +465,49 @@ def _figure_png_b64(
     left = _ee_thumb_array(left_img, None, aoi, cfg.THUMB_DIMENSIONS)
     right = _ee_thumb_array(right_img, None, aoi, cfg.THUMB_DIMENSIONS)
 
-    show_buildings = bounds is not None and buildings_aoi is not None
-    ncols = 3 if show_buildings else 2
-    fig, axes = plt.subplots(1, ncols, figsize=(17.5 if show_buildings else 12.5, 6.6))
-    if ncols == 2:
-        axes = list(axes)
-    axes[0].imshow(left)
-    axes[0].set_title(f"Sentinel-1 VV (dB)\nS1 closest to peak: {s1_when}")
-    axes[1].imshow(right)
-    axes[1].set_title(f"Water index (VV+VH) + final flood\nS1 closest to peak: {s1_when}")
-    axes[0].set_axis_off()
-    axes[1].set_axis_off()
-    _add_scale_bar(axes[0], width_km)
-    _add_north_arrow(axes[0])
-    _add_flood_legend(axes[1])
-    if show_buildings:
+    fig, axes = plt.subplots(2, 2, figsize=(13.5, 13.5))
+    axes[0][0].imshow(left)
+    axes[0][0].set_title(f"Sentinel-1 VV (dB)\nS1 closest to peak: {s1_when}")
+    axes[0][1].imshow(right)
+    axes[0][1].set_title(f"Water index (VV+VH) + final flood\nS1 closest to peak: {s1_when}")
+    axes[0][0].set_axis_off()
+    axes[0][1].set_axis_off()
+    _add_scale_bar(axes[0][0], width_km)
+    _add_north_arrow(axes[0][0])
+    _add_flood_legend(axes[0][1])
+    bldg_bounds = bounds or _wgs84_bounds(flood_gdf, buildings_aoi, buildings_affected)
+    has_buildings = (buildings_aoi is not None and not buildings_aoi.empty) or (
+        buildings_affected is not None and not buildings_affected.empty
+    )
+    has_flood = flood_gdf is not None and not flood_gdf.empty
+    if bldg_bounds is not None and (has_buildings or has_flood):
         draw_buildings_panel(
-            axes[2],
-            bounds,
-            flood_gdf if flood_gdf is not None else buildings_aoi.iloc[0:0],
+            axes[1][0],
+            bldg_bounds,
+            flood_gdf,
             buildings_aoi,
-            buildings_affected if buildings_affected is not None else buildings_aoi.iloc[0:0],
+            buildings_affected,
         )
+    else:
+        axes[1][0].set_axis_off()
+        axes[1][0].text(0.5, 0.5, "LINZ buildings not available", ha="center", va="center")
+    road_bounds = bounds or _wgs84_bounds(flood_gdf, roads_open, roads_closed)
+    has_roads = (roads_open is not None and not roads_open.empty) or (
+        roads_closed is not None and not roads_closed.empty
+    )
+    has_flood = flood_gdf is not None and not flood_gdf.empty
+    if road_bounds is not None and (has_roads or has_flood):
+        draw_roads_panel(
+            axes[1][1],
+            road_bounds,
+            flood_gdf,
+            roads_open,
+            roads_closed,
+            stats=road_stats,
+        )
+    else:
+        axes[1][1].set_axis_off()
+        axes[1][1].text(0.5, 0.5, "OSM roads not available", ha="center", va="center")
     center_str = f"[{center[0]:.4f}, {center[1]:.4f}]"
     fig.suptitle(
         f"{center_str}  |  ±{width_km / 2:.1f} km  |  {start} → {end}\n"
@@ -470,22 +516,25 @@ def _figure_png_b64(
     )
     pct = 100 * flood_km2 / aoi_km2 if aoi_km2 else 0.0
     urban_pct = 100 * flooded_urban_km2 / flood_km2 if flood_km2 else 0.0
-    bldg_txt = ""
+    extra = ""
     if n_buildings_affected is not None:
-        bldg_txt = f" LINZ buildings intersecting flood: {n_buildings_affected:,}."
+        extra += f" LINZ buildings intersecting flood: {n_buildings_affected:,}."
+    n_closed_names = None if not road_stats else road_stats.get("roads_likely_closed_names")
+    if n_closed_names is not None:
+        extra += f" OSM roads likely closed: {n_closed_names}."
     fig.text(
         0.5,
         0.01,
         f"Figure: Final flood extent (yellow) = {flood_km2 * 1e6:,.0f} m² "
         f"({flood_km2:,.2f} km², {pct:.1f}% of the {aoi_km2:,.1f} km² AOI). "
         f"Urban flooded: {flooded_urban_km2:,.2f} km² ({urban_pct:.1f}% of the flood)."
-        f"{bldg_txt}",
+        f"{extra}",
         ha="center",
         va="bottom",
         fontsize=11,
         wrap=True,
     )
-    fig.tight_layout(rect=(0, 0.05, 1, 0.92))
+    fig.tight_layout(rect=(0, 0.05, 1, 0.95))
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=120, bbox_inches="tight")
     plt.close(fig)
@@ -601,13 +650,13 @@ def run_flood_mapping(
         wi_cap = cfg.WATER_INDEX_MAX_DB
         wi_effective = min(wi_otsu, wi_cap)
         event_water = water_index.lt(wi_otsu).And(water_index.lt(wi_cap)).rename("event_water")
-        wi_pct = water_index.reduceRegion(
-            reducer=ee.Reducer.percentile([5, 50, 95]),
-            geometry=aoi,
-            scale=scale,
-            bestEffort=True,
-            maxPixels=1e9,
-        ).getInfo()
+        # wi_pct = water_index.reduceRegion(
+        #     reducer=ee.Reducer.percentile([5, 50, 95]),
+        #     geometry=aoi,
+        #     scale=scale,
+        #     bestEffort=True,
+        #     maxPixels=1e9,
+        # ).getInfo()
 
         hist_end = start
         hist_start = (
@@ -625,13 +674,13 @@ def run_flood_mapping(
         # Positive = event is darker than the historical mean (more water-like).
         wi_change = hist_wi.subtract(water_index).rename("WI_change")
         wi_anomalous = wi_change.gt(cfg.WI_CHANGE_MIN_DB).rename("wi_anomalous")
-        wi_change_pct = wi_change.reduceRegion(
-            reducer=ee.Reducer.percentile([5, 50, 95]),
-            geometry=aoi,
-            scale=scale,
-            bestEffort=True,
-            maxPixels=1e9,
-        ).getInfo()
+        # wi_change_pct = wi_change.reduceRegion(
+        #     reducer=ee.Reducer.percentile([5, 50, 95]),
+        #     geometry=aoi,
+        #     scale=scale,
+        #     bestEffort=True,
+        #     maxPixels=1e9,
+        # ).getInfo()
 
         flood_candidate = (
             event_water.And(wi_anomalous)
@@ -681,7 +730,7 @@ def run_flood_mapping(
         )
         n_poly = int(flood_boundary.size().getInfo())
 
-        report(9, "Computing area statistics")
+        report(9, "Computing area, building, and OSM road statistics")
         aoi_km2 = _area_km2(ee.Image.constant(1).clip(aoi), aoi)
         stats = {
             "aoi_km2": aoi_km2,
@@ -692,7 +741,7 @@ def run_flood_mapping(
             # "event_on_permanent_km2": _area_km2(event_water.And(permanent_water), aoi),
             # "dark_land_km2": _area_km2(dark_land, aoi),
             # "event_on_dark_land_km2": _area_km2(event_water.And(dark_land), aoi),
-            "flood_candidate_km2": _area_km2(flood_candidate, aoi),
+            # "flood_candidate_km2": _area_km2(flood_candidate, aoi),
             # "after_elev_mask_km2": _area_km2(flood_candidate.And(elev_ok), aoi),
             # "after_slope_mask_km2": _area_km2(flood_candidate.And(elev_ok).And(slope_ok), aoi),
             # "after_all_masks_km2": _area_km2(flood_masked, aoi),
@@ -720,6 +769,22 @@ def run_flood_mapping(
             )
             stats.update(bldg_stats)
 
+        roads_closed = None
+        roads_open = None
+        road_stats: dict[str, Any] | None = None
+        try:
+            _ground, roads_closed, roads_open, road_stats = classify_roads_with_flood(
+                bounds, flood_gdf
+            )
+            stats.update(road_stats)
+        except Exception as road_exc:  # noqa: BLE001 — OSM/Overpass must not fail the flood run
+            meta_road_error = str(road_exc)
+            roads_closed = None
+            roads_open = None
+            road_stats = None
+        else:
+            meta_road_error = None
+
         report(10, "Rendering comparison figure")
         w, s, e, n = bounds
         width_km = abs(e - w) * 111.32 * math.cos(math.radians((s + n) / 2.0))
@@ -742,6 +807,9 @@ def run_flood_mapping(
             buildings_aoi=buildings_aoi,
             buildings_affected=buildings_affected,
             n_buildings_affected=stats.get("buildings_affected"),
+            roads_open=roads_open,
+            roads_closed=roads_closed,
+            road_stats=road_stats,
         )
         meta = {
             "gee_project": cfg.GEE_PROJECT,
@@ -756,7 +824,7 @@ def run_flood_mapping(
             "s1_hist_end": hist_end,
             "hist_lookback_years": cfg.HIST_LOOKBACK_YEARS,
             "wi_change_min_db": cfg.WI_CHANGE_MIN_DB,
-            "wi_change_percentiles": wi_change_pct,
+            # "wi_change_percentiles": wi_change_pct,
             "s2_scenes_used": n_s2,
             "s2_scenes_cloudy_lt_10": n_s2_clear,
             "closest_s1_id": closest_id,
@@ -765,12 +833,13 @@ def run_flood_mapping(
             "wi_otsu_db": round(wi_otsu, 3),
             "wi_cap_db": wi_cap,
             "wi_effective_db": round(wi_effective, 3),
-            "wi_percentiles": wi_pct,
+            # "wi_percentiles": wi_pct,
             "dem_percentiles": dem_pct,
             "flood_polygons": n_poly,
             "slope_max_deg": req.slope_max_deg,
             "elevation_max_m": req.elevation_max_m,
             "notebook_equivalent": "notebooks/01_sentinel1_layer.ipynb",
+            "osm_road_error": meta_road_error,
         }
         html_report = None
         analysis, implications, uncertainties, conclusion = _report_section_flags()

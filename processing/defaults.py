@@ -16,16 +16,23 @@ ELEVATION_MAX_M = 25.0
 ELEVATION_ABOVE_P5_M = 20.0
 PERMANENT_WATER_OCCURRENCE = 50
 MMU_PIXELS = 8
-WORKING_SCALE = 10
+WORKING_SCALE = 30
 SENTINEL1_ENL = 4.9
 WATER_INDEX_MAX_DB = -32.0
-HIST_LOOKBACK_YEARS = 2.0
+HIST_LOOKBACK_YEARS = 1.0
 WI_CHANGE_MIN_DB = 4.0
 EXCLUDE_WORLDCOVER_CLASSES: tuple[int, ...] = ()
 VECTOR_SCALE = 40
 AREA_SCALE = 20
 BUILDING_OUTLINES_PATH = "data/nz-building/nz-building-outlines.shp"
 THUMB_DIMENSIONS = 768
+
+# OSM likely-closed roads (notebook 5e / processing/roads.py).
+ROAD_CLOSED_MIN_LENGTH_M = 50.0
+ROAD_CLOSED_MIN_FRAC = 0.30
+ROAD_LANE_WIDTH_M = 3.5
+ROAD_MIN_HALF_WIDTH_M = 3.5
+ROAD_MAX_DETOUR_NAMES = 40
 
 # Keep in sync with notebooks/layer_config.py. UI always shows the figure
 # and Key Flood Statistics; these flags add Gemini HTML sections below.

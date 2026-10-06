@@ -100,8 +100,8 @@
     <section class="results">
       <h2>Figure</h2>
       <p class="hint">
-        Sentinel-1 VV, water index + final flood, and LINZ buildings intersecting
-        flood when that layer is available.
+        Sentinel-1 VV, water index + final flood, LINZ buildings ∩ flood, and
+        OSM likely-closed vs unclosed roads (2×2).
       </p>
       <img id="figure" alt="Flood comparison figure" hidden />
       <h2>Key Flood Statistics</h2>
@@ -114,6 +114,23 @@
         </thead>
         <tbody></tbody>
       </table>
+      <h2 id="detourHeading" hidden>Likely-closed roads and detours</h2>
+      <p id="detourHint" class="hint" hidden>
+        In-AOI shortest path after flooded OSM edges are removed. Not an official
+        NZTA or council diversion.
+      </p>
+      <table id="detourStats" class="key-stats detour-stats" hidden>
+        <thead>
+          <tr>
+            <th>Closed road</th>
+            <th>Flooded</th>
+            <th>Status</th>
+            <th>Detour via</th>
+            <th>Extra</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
       <div id="analysisWrap" hidden>
         <iframe id="analysisFrame" title="Flood analysis"></iframe>
       </div>
@@ -121,6 +138,6 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
-    <script src="/static/app.js?v=keystats"></script>
+    <script src="/static/app.js?v=detours"></script>
   </body>
 </html>
