@@ -32,3 +32,10 @@ dependencies = [
 dev = [
     "ipykernel>=7.3.0",
 ]
+s2-unet = [
+    "geedim>=1.9.0",
+    "huggingface-hub>=0.30.0",
+    "localtileserver>=0.10.0",
+    "segmentation-models-pytorch>=0.5.0",
+    "torch>=2.6.0",
+]

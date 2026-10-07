@@ -26,6 +26,7 @@ env/
 
 # Jupyter
 .ipynb_checkpoints/
+notebooks/_s2_unet_cache/
 
 # Secrets and GEE / Gemini credentials
 credentials.json

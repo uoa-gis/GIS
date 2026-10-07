@@ -29,7 +29,7 @@ MAP_CENTER = [-39.6053, 176.8579] # Road Detour
 # MAP_CENTER = [-39.58, 176.88]  # Grassland below the river
 # MAP_CENTER = [-39.4829, 176.88]  # Hawke's Bay Airport
 START_DATE = "2023-02-12"
-END_DATE = "2023-02-16"
+END_DATE = "2023-02-17"
 FLOOD_PEAK_DATE = "2023-02-14"  # Cyclone Gabrielle (https://www.reuters.com/business/environment/cyclone-gabrielle-causes-havoc-new-zealand-firefighter-missing-2023-02-13/)
 
 
