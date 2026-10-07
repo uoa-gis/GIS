@@ -43,6 +43,23 @@ h1 {
   font-size: 0.9rem;
 }
 
+.tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 1.2rem;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.tab-view[hidden] {
+  display: none !important;
+}
+
+#s2-map {
+  height: 100%;
+  min-height: 420px;
+}
+
 .layout {
   display: grid;
   grid-template-columns: 320px 1fr;
@@ -104,6 +121,27 @@ button {
 button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+button.tab-btn {
+  width: auto;
+  margin: 0;
+  padding: 0.7rem 1.1rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+}
+
+button.tab-btn:hover {
+  color: var(--text);
+}
+
+button.tab-btn.is-active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  opacity: 1;
 }
 
 .status {

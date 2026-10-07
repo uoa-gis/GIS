@@ -242,10 +242,11 @@ Dark layout, gold accent. Team name **Geographically Informed Speculators** in t
 ```text
 ┌─────────────────────────────────────────────────────────────┐
 │  [logo]  Geographically Informed Speculators                │
-│          Sentinel-1 flood / inundation extent · GEOG761     │
+│          Flood / inundation extent · GEOG761                │
+│  [ Sentinel-1 SAR ]  [ Sentinel-2 U-Net ]                   │
 ├──────────────────┬──────────────────────────────────────────┤
 │ Event window     │                                          │
-│  start / end /   │           Leaflet map                    │
+│  start / end /   │           Leaflet map (this tab only)    │
 │  peak (calendar) │   click = centred rectangle              │
 │                  │   draw tool = custom box                 │
 │ Area of interest │                                          │
@@ -263,10 +264,12 @@ Dark layout, gold accent. Team name **Geographically Informed Speculators** in t
 └─────────────────────────────────────────────────────────────┘
 ```
 
+Tabs do not share form fields, Leaflet maps, or run state. Sentinel-1 still uses `POST /api/run`. The Sentinel-2 U-Net tab is a separate screen (own dates/AOI/map); its pipeline is not wired yet.
+
 
 | Region     | What it does                                                                                                                                                                                                                                                                                                       |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Header     | Team name and optional logo                                                                                                                                                                                                                                                                                        |
+| Header     | Team name, optional logo, and tabs (**Sentinel-1 SAR** vs **Sentinel-2 U-Net**)                                                                                                                                                                                                                                    |
 | Left panel | Native date pickers (start, end, optional peak; default peak is the window midpoint). Half-width (km) for click-to-centre mode. **Max slope (°)** and **max elevation (m)** (defaults `SLOPE_MAX_DEG=10`, `ELEVATION_MAX_M=25`). Run button. Live **progress** under the button: bar, `Step n/10: …`, elapsed time |
 | Map        | OpenStreetMap. **Click** places a gold rectangle of ± half-width km. Leaflet.draw **rectangle** tool for a custom box. Selected bounds are shown as text                                                                                                                                                           |
 | Results    | Same 2×2 figure as notebook section 5c (LINZ buildings ∩ flood; OSM likely-closed vs unclosed roads), then a **Key Flood Statistics** table: flood area, share of AOI, buildings, flooded road length/area, likely-closed name count and names |

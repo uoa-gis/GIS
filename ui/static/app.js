@@ -295,6 +295,10 @@ document.getElementById("runBtn").addEventListener("click", async () => {
   }
 });
 
+window.invalidateS1Map = function invalidateS1Map() {
+  map.invalidateSize();
+};
+
 setAoiText();
 
 fetch("/api/defaults")
