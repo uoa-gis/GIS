@@ -39,3 +39,8 @@ s2-unet = [
     "segmentation-models-pytorch>=0.5.0",
     "torch>=2.6.0",
 ]
+
+# Plain `uv sync` / `uv run uvicorn` must keep S2 extras. Without this,
+# `uv sync` uninstalls the s2-unet group and geedim disappears from the UI.
+[tool.uv]
+default-groups = ["dev", "s2-unet"]

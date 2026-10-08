@@ -198,7 +198,8 @@ button.tab-btn.is-active {
   border-top: 1px solid var(--border);
 }
 
-#figure {
+#figure,
+#s2Figure {
   max-width: 100%;
   height: auto;
   background: #000;

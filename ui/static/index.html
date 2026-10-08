@@ -177,9 +177,9 @@
         <section class="panel">
           <h2>Sentinel-2 U-Net</h2>
           <p class="hint">
-            Optical surface-water mapping (Lab 5 U-Net on 6-band Sentinel-2).
-            This tab has its own dates, AOI, and map. It does not share state
-            with Sentinel-1 SAR.
+            Optical flood extent with a pretrained Sentinel-2 U-Net++
+            (WorldFloods / S1S2Water). Own dates, AOI, and map — not shared with
+            Sentinel-1 SAR.
           </p>
           <label>
             Start
@@ -188,6 +188,10 @@
           <label>
             End
             <input type="date" id="s2EndDate" value="2023-02-16" />
+          </label>
+          <label>
+            Peak (optional; default is the midpoint)
+            <input type="date" id="s2PeakDate" value="2023-02-14" />
           </label>
           <h2>Area of interest</h2>
           <p class="hint">
@@ -206,12 +210,35 @@
             />
           </label>
           <p id="s2AoiText" class="mono">No AOI yet.</p>
-          <button type="button" id="s2RunBtn" disabled>
-            Run Sentinel-2 U-Net
-          </button>
-          <p id="s2Status" class="status">
-            Pipeline not connected yet. Fill this tab without changing Sentinel-1.
-          </p>
+          <h2>Terrain filters</h2>
+          <label>
+            Max slope (deg)
+            <input
+              type="number"
+              id="s2SlopeMaxDeg"
+              min="0"
+              max="90"
+              step="0.5"
+              value="10"
+            />
+          </label>
+          <label>
+            Max elevation (m)
+            <input
+              type="number"
+              id="s2ElevationMaxM"
+              min="0"
+              step="1"
+              value="25"
+            />
+          </label>
+          <button type="button" id="s2RunBtn">Run Sentinel-2 U-Net</button>
+          <div id="s2Progress" class="progress" hidden>
+            <div class="progress-bar"><div id="s2ProgressFill" class="progress-fill"></div></div>
+            <p id="s2ProgressText" class="progress-text"></p>
+            <p id="s2ProgressElapsed" class="progress-elapsed"></p>
+          </div>
+          <p id="s2Status" class="status"></p>
         </section>
         <section class="map-wrap">
           <div id="s2-map"></div>
@@ -219,14 +246,28 @@
       </main>
       <section class="results">
         <h2>Figure</h2>
-        <p class="hint">U-Net flood figure will appear here after the pipeline is wired.</p>
+        <p class="hint">
+          Event L1C RGB, U-Net water, and final flood (event water minus permanent
+          water on low / flat ground).
+        </p>
+        <img id="s2Figure" alt="Sentinel-2 U-Net flood figure" hidden />
+        <h2>Key Flood Statistics</h2>
+        <table id="s2KeyStats" class="key-stats" hidden>
+          <thead>
+            <tr>
+              <th>Indicator</th>
+              <th>Value</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
       </section>
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
-    <script src="/static/app.js?v=tabs"></script>
-    <script src="/static/s2.js?v=tabs"></script>
-    <script src="/static/tabs.js?v=tabs"></script>
+    <script src="/static/app.js?v=s2pipe"></script>
+    <script src="/static/s2.js?v=s2pipe"></script>
+    <script src="/static/tabs.js?v=s2pipe"></script>
   </body>
 </html>

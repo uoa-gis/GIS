@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 
 from processing import defaults as cfg
 from processing.pipeline import FloodRunRequest, run_flood_mapping
+from processing.s2_pipeline import run_s2_flood_mapping
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -120,6 +121,55 @@ def start_run(body: RunBody) -> dict[str, str]:
     with _jobs_lock:
         _jobs[job_id] = {"status": "queued", "result": None, "progress": None}
     threading.Thread(target=_worker, args=(job_id, body), daemon=True).start()
+    return {"job_id": job_id}
+
+
+def _s2_worker(job_id: str, body: RunBody) -> None:
+    def on_progress(step: int, total: int, label: str) -> None:
+        with _jobs_lock:
+            _jobs[job_id]["progress"] = {"step": step, "total": total, "label": label}
+
+    with _jobs_lock:
+        _jobs[job_id]["progress"] = {"step": 0, "total": 0, "label": "Waiting for previous run"}
+    with _run_lock:
+        with _jobs_lock:
+            _jobs[job_id]["status"] = "running"
+        result = run_s2_flood_mapping(
+            FloodRunRequest(
+                start_date=body.start_date,
+                end_date=body.end_date,
+                peak_date=body.peak_date,
+                west=body.west,
+                south=body.south,
+                east=body.east,
+                north=body.north,
+                center_lat=body.center_lat,
+                center_lon=body.center_lon,
+                half_km=body.half_km,
+                slope_max_deg=body.slope_max_deg,
+                elevation_max_m=body.elevation_max_m,
+            ),
+            progress=on_progress,
+        )
+    payload: dict[str, Any] = {
+        "ok": result.ok,
+        "stats": result.stats,
+        "figure_png_base64": result.figure_png_base64,
+        "meta": result.meta,
+        "error": result.error,
+        "report": result.report,
+    }
+    with _jobs_lock:
+        _jobs[job_id]["status"] = "done" if result.ok else "error"
+        _jobs[job_id]["result"] = payload
+
+
+@app.post("/api/run-s2")
+def start_s2_run(body: RunBody) -> dict[str, str]:
+    job_id = str(uuid.uuid4())
+    with _jobs_lock:
+        _jobs[job_id] = {"status": "queued", "result": None, "progress": None}
+    threading.Thread(target=_s2_worker, args=(job_id, body), daemon=True).start()
     return {"job_id": job_id}
 
 

@@ -264,7 +264,7 @@ Dark layout, gold accent. Team name **Geographically Informed Speculators** in t
 └─────────────────────────────────────────────────────────────┘
 ```
 
-Tabs do not share form fields, Leaflet maps, or run state. Sentinel-1 still uses `POST /api/run`. The Sentinel-2 U-Net tab is a separate screen (own dates/AOI/map); its pipeline is not wired yet.
+Tabs do not share form fields, Leaflet maps, or run state. Sentinel-1 uses `POST /api/run`. Sentinel-2 U-Net uses `POST /api/run-s2` (`processing/s2_pipeline.py`, same flow as `notebooks/02_sentinel2_layer.ipynb`). Poll both with `GET /api/job/{job_id}`.
 
 
 | Region     | What it does                                                                                                                                                                                                                                                                                                       |
@@ -314,6 +314,7 @@ These controls are sent with `POST /api/run`. They replace the notebook’s `STA
 
 ```bash
 # Values also come from repo-root .env (EE_PROJECT, GOOGLE_APPLICATION_CREDENTIALS).
+# Includes the s2-unet group (geedim, torch, …) via [tool.uv] default-groups.
 uv sync
 uv run uvicorn ui.app:app --reload --host 127.0.0.1 --port 8000
 ```
@@ -383,7 +384,9 @@ GEOG761-GIS/
     02_sentinel2_layer.ipynb
     03_dem_layer.ipynb
   data/nz-building/            # local LINZ NZ Building Outlines (not committed)
-  processing/                  # UI backend: same S1 flood flow as 01_
+  processing/                  # UI backend
+    pipeline.py                # S1 flood flow (same as 01_)
+    s2_pipeline.py             # S2 U-Net flood flow (same as 02_)
     buildings.py               # LINZ outlines ∩ flood
     roads.py                   # OSM drive ∩ flood (likely-closed, detours)
   ui/                          # FastAPI + Leaflet calendar / map
