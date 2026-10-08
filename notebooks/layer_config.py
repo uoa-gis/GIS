@@ -25,8 +25,8 @@ MAP_ZOOM = 11
 
 # Short window so S1 and S2 can be checked quickly. Edit if a collection is empty.
 # Change the dates to the dates of the flood event
-MAP_CENTER = [-39.6053, 176.8579] # Road Detour
-# MAP_CENTER = [-39.58, 176.88]  # Grassland below the river
+# MAP_CENTER = [-39.6053, 176.8579] # Road Detour
+MAP_CENTER = [-39.58, 176.88]  # Grassland below the river
 # MAP_CENTER = [-39.4829, 176.88]  # Hawke's Bay Airport
 START_DATE = "2023-02-12"
 END_DATE = "2023-02-17"
