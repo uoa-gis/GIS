@@ -47,7 +47,6 @@ output/
 *.pth
 *.pt
 *.ckpt
-*.zip
 
 # Shapefile sidecars (prefer GeoJSON in git)
 *.shp
