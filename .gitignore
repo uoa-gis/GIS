@@ -7,7 +7,6 @@ Thumbs.db
 
 # Cursor local (keep shared skills)
 .cursor/*
-!.cursor/skills/
 
 # Python
 __pycache__/
