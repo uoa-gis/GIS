@@ -421,13 +421,13 @@ Jobs usually take **several minutes**. `--reload` picks up Python changes; refre
  
 ## Team contributions
  
-| Members involved | Project contribution | Where it lives in the repo |
+| Member Name | Project contribution | Where it lives in the repo |
 | ----------------- | -------------------- | -------------------------- |
 | (edit name here) | Problem framing and scope (HA/DR site selection after a disaster), method and data selection, Cyclone Gabrielle case study | README: [The problem](#the-problem), [Observation and method](#observation-and-method), [Expected product and risks](#expected-product-and-risks) |
-| (edit name here) | Primary Sentinel-1 flood pipeline: unsupervised 2-D GMM on `WI` and `ΔWI`, WorldCover / JRC / FABDEM post-masks, flood vectorisation, area statistics; LINZ building and OSM road exposure | `notebooks/01_sentinel1_layer.ipynb`, `processing/pipeline.py`, `processing/buildings.py`, `processing/roads.py` |
+| Dongwook Kim | Primary Sentinel-1 flood pipeline: unsupervised 2-D GMM on `WI` and `ΔWI`, WorldCover / JRC / FABDEM post-masks, flood vectorisation, area statistics; LINZ building and OSM road exposure | `notebooks/01_sentinel1_layer.ipynb`, `processing/pipeline.py`, `processing/buildings.py`, `processing/roads.py` |
 | (edit name here) | Methods research and assessment; map UI (Sentinel-1 and Sentinel-2 tabs); Sentinel-2 flood layer using a pretrained U-Net (inference only) | `ui/`, `notebooks/02_sentinel2_layer.ipynb`, `processing/s2_pipeline.py` |
 | (edit name here) | Validation of the Sentinel-1 flood map against the Dragonfly 14 Feb flood extent (confusion matrix, precision, recall, F1, IoU, urban vs non-urban recall); GMM vs k-means comparison | `notebooks/04_validation.ipynb`, `outputs/validation/` |
-| (edit name here) | Experimental post-flood silt mapping (Random Forest, Dragonfly labels; not part of the validated product or UI); limitations analysis and further work | `notebooks/05_silt_layer.ipynb`, `outputs/silt_layer/`, README: [Discussion](#discussion) |
+| Dhruv Patel | Experimental post-flood silt mapping (Random Forest, Dragonfly labels; not part of the validated product or UI); limitations analysis and further work | `notebooks/05_silt_layer.ipynb`, `outputs/silt_layer/`, README: [Discussion](#discussion) |
  
 ---
 
