@@ -80,7 +80,7 @@ This downloads Geofabrik country extracts (© OpenStreetMap contributors, ODbL) 
 2. **Clip to the AOI.** `gpd.read_file(path, bbox=...)` with the AOI box in the file's CRS reads only outlines inside the AOI rectangle (the national file is large), reprojected to WGS 84. This is `buildings_in_aoi`.
 3. **Bring the flood to the client.** `flood_boundary` (Earth Engine `FeatureCollection`) is pulled with `getInfo()` and turned into a GeoDataFrame in WGS 84.
 4. **Intersect.** `gpd.sjoin(buildings, flood, predicate="intersects")`. A building counts once if **any part** of its roof outline touches flood water; duplicates from multiple flood polygons are dropped on `building_i`. This is `buildings_affected`.
-5. **Footprint area.** The affected outlines are overlaid with the flood polygons in **NZTM2000** (`EPSG:2193`) so the wetted roof area is in square metres (`buildings_affected_footprint_km2`). The count itself does not depend on the CRS.
+5. **Footprint area.** The affected outlines are overlaid with the flood polygons in the **local UTM zone** (`estimate_utm_crs()`, so it also works outside NZ) so the wetted roof area is in square metres (`buildings_affected_footprint_km2`). The count itself does not depend on the CRS.
 
 
 | Stat key                           | Meaning                                       |
@@ -88,7 +88,7 @@ This downloads Geofabrik country extracts (© OpenStreetMap contributors, ODbL) 
 | `buildings_in_aoi`                 | LINZ outlines inside the AOI rectangle        |
 | `buildings_affected`               | Outlines intersecting `flood_boundary`        |
 | `buildings_affected_pct`           | `buildings_affected / buildings_in_aoi × 100` |
-| `buildings_affected_footprint_km2` | Area of outline ∩ flood, NZTM2000             |
+| `buildings_affected_footprint_km2` | Area of outline ∩ flood, local UTM zone       |
 
 
 The figure's bottom-left panel draws flood in yellow, AOI outlines in grey and affected outlines in red. The notebook map adds only the affected outlines as a layer (uploading every AOI outline to Earth Engine is slow).
@@ -102,7 +102,7 @@ Code: `processing/roads.py`, used by notebook section 5e and the UI pipeline. Th
 OSM is used instead of LINZ Topo50 because drive edges form a **connected graph**, with `name`, `highway`, `lanes`, `bridge`, and `tunnel`. That lets the notebook (1) skip elevated crossings that only look flooded because the centreline crosses the river, and (2) search an in-AOI detour after flooded edges are removed.
 
 1. **Download.** `osmnx.graph_from_bbox` on `AOI_BOUNDS`, `network_type="drive"` (Overpass; first run needs network, later runs may use the OSMNx cache).
-2. **Ground roads.** Drop edges tagged `bridge` or `tunnel`. Length and area are computed in **NZTM2000** (`EPSG:2193`).
+2. **Ground roads.** Drop edges tagged `bridge` or `tunnel`. Length and area are computed in the **local UTM zone** (NZTM2000 is only the fallback), so the same code works for NZ and the Pacific.
 3. **Intersect.** Flooded **length** = centreline ∩ `flood_boundary`. Flooded **area** = carriageway buffer ∩ flood. Buffer half-width = `lanes × 3.5 m / 2`, minimum 3.5 m.
 4. **Flood-affected.** An edge is flood-affected if flooded length ≥ **50 m** **or** flooded length / edge length ≥ **30%**. Short slivers at the SAR/vector edge are ignored. Names are aggregated from OSM `name` (unnamed ways stay `(unnamed)`).
 5. **Detour.** Copy the graph, remove every flood-affected edge, then `networkx.shortest_path` between the endpoints of the longest flooded edge per name. If a path exists, extra metres versus the original edge are stored; if not, the AOI graph has no alternative (the road may still be reachable from outside the box).
@@ -112,7 +112,7 @@ OSM is used instead of LINZ Topo50 because drive edges form a **connected graph*
 | ----------------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | `roads_in_aoi_km`                               | OSM drive centreline length in the AOI                                                              |
 | `roads_flooded_km`                              | Centreline length intersecting `flood_boundary`                                                     |
-| `roads_flooded_area_km2`                        | Carriageway buffer ∩ flood, NZTM2000                                                                |
+| `roads_flooded_area_km2`                        | Carriageway buffer ∩ flood, local UTM zone                                                          |
 | `roads_flood_affected_edges`                    | Flood-affected edges meeting the 50 m / 30% rule                                                    |
 | `roads_flood_affected_names`                    | Count of unique OSM names among flood-affected edges                                                |
 | `roads_flood_affected_name_list`                | Those names, longest flooded first                                                                  |
@@ -125,11 +125,11 @@ The figure's bottom-right panel draws flood in yellow, **not flood-affected** ro
 
 **Read these as a geometric/network proxy, not an official closure list.** SAR flood pixels are 10–40 m; a centreline has no width. Bridges can still be misclassified if OSM tags are missing. In-AOI “no detour” does not mean the rest of Hawke’s Bay is unreachable. Official NZTA / council closures are a different dataset.
 
-Defaults: `HIST_LOOKBACK_YEARS = 1` in `notebooks/layer_config.py` (UI `processing/defaults.py` matches). `WI_CHANGE_MIN_DB` and `WATER_INDEX_MAX_DB` are leftover from the old 1-D Otsu path; `01_` **and** `04_` **do not use them**.
+Defaults: `HIST_LOOKBACK_YEARS = 1` and `MATCH_ORBIT = True` in `notebooks/layer_config.py` (UI `processing/defaults.py` matches). `WI_CHANGE_MIN_DB` and `WATER_INDEX_MAX_DB` are leftover from the old 1-D Otsu path; `01_` **and** `04_` **do not use them**.
 
 SAR is used because it works through cloud (storms/cyclones). Sentinel-2 is a secondary optical check, not the primary flood classifier.
 
-**Honesty:** Lecture 6 maps land vs water with **Random Forest on VV/VH**. This notebook uses **unsupervised 2-D GMM / k-means** on (`WI`, `ΔWI`) because flood polygons are not training labels. WorldCover / JRC / FABDEM are applied **after** clustering. The historical layer is a **lookback composite**, not a matched pre-event / post-event pair (different orbits and seasons are averaged together).
+**Honesty:** Lecture 6 maps land vs water with **Random Forest on VV/VH**. This notebook uses **unsupervised 2-D GMM / k-means** on (`WI`, `ΔWI`) because flood polygons are not training labels. WorldCover / JRC / FABDEM are applied **after** clustering. The historical layer is a **one-year same-track median**, not a single matched pre-event scene. Viewing geometry is now held constant (one relative orbit and pass), but seasons are still pooled in the baseline.
 
 ### Example program output figure
 
@@ -178,7 +178,7 @@ Pixel areas are summed at 20 m (`AREA_SCALE`). From those areas:
 
 `precision = TP / (TP + FP)` · `recall = TP / (TP + FN)` · `F1 = 2PR / (P + R)` · `IoU = TP / (TP + FP + FN)` · Cohen's kappa from the same 2×2 table
 
-This example is Cyclone Gabrielle, **±5 km at** `[-39.58, 176.88]`, event window 12–17 Feb 2023. Current scores are written to `outputs/validation/scores.csv` by `04_validation.ipynb`. Final pipeline (track 81 ascending, single peak pass 14 Feb 2023 07:07 UTC; 50 same-track baseline scenes, per-pixel median; per-scene Lee; angular terrain flattening): precision 0.967, recall 0.564, **F1 0.713**, **IoU 0.554**, **kappa 0.653**, overall accuracy 0.894 (S1 flood 12.52 km² vs reference 21.45 km²). Urban recall 0.001 vs non-urban 0.580. Earlier configurations scored higher against this reference (same-track mean baseline: F1 0.766, IoU 0.620, kappa 0.712; mixed-track mean: F1 0.762, IoU 0.616): the preprocessing changes, made on methodological grounds, shifted the hard GMM boundary and cut mapped flood by 12%.
+This example is Cyclone Gabrielle, **±5 km at** `[-39.58, 176.88]`, event window 12–17 Feb 2023. Running `04_validation.ipynb` writes the scores to `outputs/validation/`. The committed CSVs and `agreement.png` predate the preprocessing changes (they still show the old F1 0.85 / IoU 0.74), so re-run the notebook to refresh them. The figures below are from the final pipeline run. Final pipeline (track 81 ascending, single peak pass 14 Feb 2023 07:07 UTC; 50 same-track baseline scenes, per-pixel median; per-scene Lee; angular terrain flattening): precision 0.967, recall 0.564, **F1 0.713**, **IoU 0.554**, **kappa 0.653**, overall accuracy 0.894 (S1 flood 12.52 km² vs reference 21.45 km²). Urban recall 0.001 vs non-urban 0.580. Earlier configurations scored higher against this reference (same-track mean baseline: F1 0.766, IoU 0.620, kappa 0.712; mixed-track mean: F1 0.762, IoU 0.616): the preprocessing changes, made on methodological grounds, shifted the hard GMM boundary and cut mapped flood by 12%.
 
 Silt overlap (Dragonfly 19/21 Feb): silt covers 30.9 km² (34% of the AOI); 66% of S1 false alarms fall on silt, about twice the AOI share, consistent with wet silt or receding water being mapped as flood.
 
@@ -238,11 +238,11 @@ Two Sentinel-1 stacks share one AOI and the same per-scene Lee / terrain-flatten
 
 | Stack      | Date filter                                       | Role                                                   |
 | ---------- | ------------------------------------------------- | ------------------------------------------------------ |
-| Event      | `START_DATE` → `END_DATE`                         | `WI_event` (one axis of the 2-D clusterer)             |
-| Historical | `START_DATE − HIST_LOOKBACK_YEARS` → `START_DATE` | `WI_hist`; `ΔWI = WI_hist − WI_event` (the other axis) |
+| Event      | Single peak pass on the chosen track, within `START_DATE` → `END_DATE` | `WI_event` (one axis of the 2-D clusterer)             |
+| Historical | Same track, `START_DATE − HIST_LOOKBACK_YEARS` → `START_DATE`, per-pixel median | `WI_hist`; `ΔWI = WI_hist − WI_event` (the other axis) |
 
 
-Flood is the GMM component that is dark **and** newly darker than history, then WorldCover / JRC / DEM filters. Sentinel-2 is optional optical context, not the flood classifier. The comparison figure is a 2×2 of event Sentinel-1 VV, water index with `final_flood`, LINZ buildings, and OSM flood-affected roads.
+The track is chosen in `processing/s1_tracks.py`: keep relative orbits whose event scenes cover at least 95% of the AOI, then take the one closest in time to the peak. If no single track covers the AOI, all tracks are mixed and the run says so. Flood is the GMM component that is dark **and** newly darker than history, then WorldCover / JRC / DEM filters. Sentinel-2 is optional optical context, not the flood classifier. The comparison figure is a 2×2 of event Sentinel-1 VV, water index with `final_flood`, LINZ buildings, and OSM flood-affected roads.
 
 ```mermaid
 flowchart TD
@@ -389,7 +389,7 @@ These controls are sent with `POST /api/run`. They replace the notebook’s `STA
 | Half-width (km)   | `half_km`                        | 5                                     | Distance north/south/east/west from the click. Only used in click-to-centre mode (same idea as notebook `AOI_RADIUS_KM`)          |
 | Draw rectangle    | `west`, `south`, `east`, `north` | none                                  | Custom AOI box. If you draw, these bounds are used and half-width is ignored                                                      |
 | Max slope (deg)   | `slope_max_deg`                  | 10                                    | Drop flood candidates on slopes **≥** this (steep ground is flood-implausible and layover/shadow-prone)                           |
-| Max elevation (m) | `elevation_max_m`                | 25                                    | Drop flood candidates at or above this FABDEM height. A second relative cap (`ELEVATION_ABOVE_P5_M`) still applies in the backend |
+| Max elevation (m) | `elevation_max_m`                | 9000 (absolute cap off)               | Drop flood candidates at or above this FABDEM height. A second relative cap (`ELEVATION_ABOVE_P5_M`) still applies in the backend |
 
 
 **Progress steps (shown under the button):** (1) initialise Earth Engine, (2) search Sentinel-1, (3) Sentinel-2 RGB, (4) DEM / WorldCover / JRC, (5) per-scene Lee + terrain flattening, (6) water index + historical `ΔWI` + **2-D GMM flood cluster**, (7) elevation / slope / layover masks, (8) vectorise flood polygons, (9) area statistics, LINZ buildings, and OSM flood-affected roads, (10) render figure. Earth Engine is lazy, so the bar can sit on steps 6, 7 and 9 for a while (step 9 also waits on Overpass). Only **one** run at a time; a second job waits.
@@ -496,20 +496,25 @@ GEOG761-GIS/
   .env.example                 # EE_PROJECT
   assets/logo/                 # team logo (optional)
   notebooks/                   # GEE / geemap layer tests
-    layer_config.py            # notebook AOI, dates, thresholds (incl. LINZ building path)
+    layer_config.py            # notebook AOI, dates, thresholds (incl. LINZ path, BUILDING_SOURCE, MATCH_ORBIT)
     01_sentinel1_layer.ipynb   # S1 flood reference (GMM; 5d buildings, 5e–5f OSM roads / detours)
     02_sentinel2_layer.ipynb
     03_dem_layer.ipynb
-    04_validation.ipynb        # S1 vs Dragonfly flood / silt
+    04_validation.ipynb        # S1 vs Dragonfly flood scores, plus silt overlap of false alarms
     05_silt_layer.ipynb        # experimental silt/slip RF (discussion only)
   outputs/s1_road_detours.png  # 5f in-AOI detours for flood-affected roads
   outputs/validation/          # agreement map and score CSVs
   outputs/silt_layer/          # experimental RF metrics
   data/nz-building/            # local LINZ NZ Building Outlines (not committed)
+  data/osm-roads/, data/osm-buildings/  # offline Geofabrik extracts (not committed)
+  scripts/download_osm.py      # builds the offline OSM road / building files
   processing/                  # UI backend
     pipeline.py                # S1 UI flood flow (should match notebook GMM)
+    s1_preprocess.py           # per-scene Lee, angular terrain flattening, layover/shadow mask
+    s1_tracks.py               # choose one S1 track by AOI coverage, then closeness to peak
+    map_furniture.py           # scale bar, north arrow, legend on all map figures
     s2_pipeline.py             # S2 U-Net flood flow (same as 02_)
-    buildings.py               # LINZ outlines ∩ flood
+    buildings.py               # LINZ or OSM buildings ∩ flood
     roads.py                   # OSM drive ∩ flood (flood-affected, detours)
   ui/                          # FastAPI + Leaflet calendar / map
     app.py
