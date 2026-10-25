@@ -177,7 +177,7 @@ async function s2Poll(jobId) {
 }
 
 const S2_KEY_STATS = [
-  ["Final flood extent", "flood_final_km2", "km²"],
+  ["Flood extent", "flood_final_km2", "km²"],
   ["Flood share of AOI", "flood_pct_of_aoi", "%"],
   ["AOI area", "aoi_km2", "km²"],
   ["U-Net water (event)", "event_unet_water_km2", "km²"],

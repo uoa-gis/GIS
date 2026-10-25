@@ -163,7 +163,7 @@ async function poll(jobId) {
 }
 
 const KEY_STATS = [
-  ["Final flood extent", "flood_final_km2", "km²"],
+  ["Flood extent", "flood_final_km2", "km²"],
   ["Flood share of AOI", "flood_pct_of_aoi", "%"],
   ["AOI area", "aoi_km2", "km²"],
   ["Buildings intersecting flood", "buildings_affected", ""],

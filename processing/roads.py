@@ -7,19 +7,23 @@ official NZTA or council closure list.
 from __future__ import annotations
 
 import textwrap
-from typing import Any
+from pathlib import Path
+import threading
+import time
+from typing import Any, Callable
 
 import geopandas as gpd
 import pandas as pd
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
+from shapely.geometry import LineString, box
 from shapely.ops import unary_union
 
 from processing import defaults as cfg
 
 NZTM = "EPSG:2193"
 WGS84 = "EPSG:4326"
-FLOOD_COLOR = "#ffff00"
+from processing.map_furniture import FLOOD_COLOR, FLOOD_LABEL  # noqa: E402
 CLOSED_COLOR = "#d01c8b"
 OPEN_COLOR = "#1b9e77"
 
@@ -70,37 +74,203 @@ _OVERPASS_URLS = (
     "https://overpass-api.de/api",
     "https://overpass.kumi.systems/api",
 )
+# Try order: main server, then the mirror (180 s each, as before the lock was added).
+_OVERPASS_ATTEMPTS = _OVERPASS_URLS
+_OVERPASS_TIMEOUT_S = 180
+_OVERPASS_RETRY_PAUSE_S = 5
+# Public Overpass servers limit concurrent requests per user, and osmnx settings
+# are global. Roads and buildings therefore run one at a time behind this lock.
+_OVERPASS_LOCK = threading.Lock()
+# After every server has failed, skip Overpass for this long instead of waiting out
+# the timeouts again (roads then buildings could otherwise wait ~12 minutes).
+_OVERPASS_COOLDOWN_S = 600
+_overpass_down_until = 0.0
+
+
+def overpass_call(fn: Callable[[], Any], what: str) -> Any:
+    """Run ``fn`` (an osmnx download) against each Overpass server in turn.
+
+    ``InsufficientResponseError`` (nothing mapped in the AOI) is re-raised at once
+    so the caller can treat it as an empty result.
+    """
+    import osmnx as ox
+
+    global _overpass_down_until
+    with _OVERPASS_LOCK:
+        if time.time() < _overpass_down_until:
+            raise RuntimeError(
+                f"OSM Overpass failed for {what}: skipped, servers timed out on an earlier request (ReadTimeout)"
+            )
+        ox.settings.use_cache = True
+        ox.settings.requests_timeout = _OVERPASS_TIMEOUT_S
+        # Skip osmnx's slot-wait; the attempt list and lock handle pacing instead.
+        ox.settings.overpass_rate_limit = False
+        last_exc: Exception | None = None
+        for i, url in enumerate(_OVERPASS_ATTEMPTS):
+            if i:
+                time.sleep(_OVERPASS_RETRY_PAUSE_S)
+            ox.settings.overpass_url = url
+            try:
+                return fn()
+            except Exception as exc:  # noqa: BLE001 — try the next server
+                if type(exc).__name__ == "InsufficientResponseError":
+                    raise
+                last_exc = exc
+        _overpass_down_until = time.time() + _OVERPASS_COOLDOWN_S
+    raise RuntimeError(f"OSM Overpass failed for {what}: {type(last_exc).__name__}: {last_exc}") from last_exc
+
+
+def short_osm_error(exc: BaseException | str | None) -> str:
+    """One readable line for figures; full text stays in run metadata."""
+    text = str(exc or "")
+    if "Timeout" in text or "timed out" in text:
+        return "OpenStreetMap server timed out. Try the run again in a few minutes."
+    if "429" in text or "Too Many Requests" in text:
+        return "OpenStreetMap server busy (rate limit). Try again in a few minutes."
+    if "ConnectionError" in text or "Max retries" in text:
+        return "Could not reach the OpenStreetMap server (check the internet connection)."
+    first = text.splitlines()[0] if text else "unknown error"
+    return first[:160]
+
+
+OSM_ROADS_DIR = Path(__file__).resolve().parents[1] / "data" / "osm-roads"
+_NODE_DECIMALS = 7  # ~1 cm; OSM ways that share a node have identical coordinates
+
+
+def load_local_osm_roads(bounds: list[float]) -> gpd.GeoDataFrame | None:
+    """Drivable road centrelines in the AOI from local Geofabrik extracts, or None.
+
+    Files come from scripts/download_osm.py (WGS84). Lines are clipped to the AOI
+    so the network matches what osmnx returns for a bbox. None means no local
+    file has roads here, so the caller should try the live server.
+    """
+    files = sorted(OSM_ROADS_DIR.glob("*.gpkg"))
+    if not files:
+        return None
+    parts = []
+    for path in files:
+        g = gpd.read_file(path, bbox=tuple(bounds))
+        if not g.empty:
+            parts.append(g.to_crs("EPSG:4326"))
+    if not parts:
+        return None
+    lines = gpd.GeoDataFrame(pd.concat(parts, ignore_index=True), geometry="geometry", crs="EPSG:4326")
+    lines = gpd.clip(lines, box(*bounds)).explode(index_parts=False)
+    lines = lines[lines.geometry.geom_type == "LineString"]
+    return lines.reset_index(drop=True) if not lines.empty else None
+
+
+def build_drive_graph(lines: gpd.GeoDataFrame) -> tuple[Any, gpd.GeoDataFrame]:
+    """Routable MultiDiGraph + edge table from road centrelines (osmnx-compatible).
+
+    Lines are split at junctions: any vertex shared by two or more ways, plus way
+    endpoints. Bridges over roads do not share an OSM node, so they do not create
+    false junctions. One-way roads (Geofabrik ``oneway`` F/T) get one direction,
+    others both. Edge ``length`` is metres in the local UTM zone, as osmnx does.
+    """
+    import math
+    from collections import Counter
+
+    import networkx as nx
+    from pyproj import Transformer
+
+    metric = lines.estimate_utm_crs()
+    to_m = Transformer.from_crs("EPSG:4326", metric, always_xy=True)
+
+    def key(c):
+        return (round(c[0], _NODE_DECIMALS), round(c[1], _NODE_DECIMALS))
+
+    coords_list = []
+    counts: Counter = Counter()
+    for geom in lines.geometry:
+        cs = [key(c) for c in geom.coords]
+        cs = [cs[0]] + [c for prev, c in zip(cs, cs[1:]) if c != prev]
+        coords_list.append(cs)
+        if len(cs) < 2:
+            continue
+        counts[cs[0]] += 2
+        counts[cs[-1]] += 2
+        for c in set(cs[1:-1]):
+            counts[c] += 1
+
+    node_id: dict[tuple[float, float], int] = {}
+
+    def nid(c) -> int:
+        if c not in node_id:
+            node_id[c] = len(node_id)
+        return node_id[c]
+
+    graph = nx.MultiDiGraph(crs="EPSG:4326")
+    rows: list[dict[str, Any]] = []
+    records = lines.drop(columns="geometry").to_dict("records")
+    for rec, cs in zip(records, coords_list):
+        if len(cs) < 2:
+            continue
+        oneway = str(rec.get("oneway") or "B").strip().upper()
+        attrs = {
+            "osmid": rec.get("osm_id"),
+            "name": rec.get("name"),
+            "highway": rec.get("highway"),
+            "ref": rec.get("ref"),
+            "bridge": rec.get("bridge", "no"),
+            "tunnel": rec.get("tunnel", "no"),
+            "oneway": oneway,
+        }
+        start = 0
+        for j in range(1, len(cs)):
+            if j < len(cs) - 1 and counts[cs[j]] < 2:
+                continue
+            part = cs[start : j + 1]
+            start = j
+            xs, ys = to_m.transform([c[0] for c in part], [c[1] for c in part])
+            length = sum(math.hypot(x2 - x1, y2 - y1) for x1, y1, x2, y2 in zip(xs, ys, xs[1:], ys[1:]))
+            if length <= 0:
+                continue
+            u, v = nid(part[0]), nid(part[-1])
+            if oneway == "F":
+                directions = [(u, v, part)]
+            elif oneway == "T":
+                directions = [(v, u, part[::-1])]
+            else:
+                directions = [(u, v, part), (v, u, part[::-1])]
+            for a, b, pts in directions:
+                geom = LineString(pts)
+                k = graph.add_edge(a, b, length=length, geometry=geom, **attrs)
+                rows.append({"u": a, "v": b, "key": k, "length": length, **attrs, "geometry": geom})
+
+    nx.set_node_attributes(graph, {i: {"x": c[0], "y": c[1]} for c, i in node_id.items()})
+    edges = gpd.GeoDataFrame(rows, geometry="geometry", crs="EPSG:4326")
+    return graph, edges
 
 
 def fetch_osm_drive_edges(bounds: list[float]) -> tuple[Any, gpd.GeoDataFrame]:
-    """Download OSM drive graph for [west, south, east, north]; return graph + edges."""
+    """OSM drive graph + edges for [west, south, east, north].
+
+    Local Geofabrik extracts (data/osm-roads/, scripts/download_osm.py) first, so
+    runs work offline; the live Overpass server only when no local file covers
+    the AOI. ``graph.graph["source"]`` records which was used.
+    """
+    local = load_local_osm_roads(bounds)
+    if local is not None:
+        graph, edges = build_drive_graph(local)
+        graph.graph["source"] = "OSM local extract (Geofabrik)"
+        return graph, edges
+
     import osmnx as ox
 
     west, south, east, north = bounds
-    bbox = (west, south, east, north)
-    ox.settings.use_cache = True
-    ox.settings.requests_timeout = 180
-    # Skip the Overpass slot-wait; retry the next mirror on 429/timeout instead.
-    ox.settings.overpass_rate_limit = False
-    last_exc: Exception | None = None
-    for url in _OVERPASS_URLS:
-        ox.settings.overpass_url = url
+
+    def _download():
         try:
-            try:
-                graph = ox.graph_from_bbox(bbox, network_type="drive", simplify=True)
-            except TypeError:
-                graph = ox.graph_from_bbox(
-                    north, south, east, west, network_type="drive", simplify=True
-                )
-            _nodes, edges = ox.graph_to_gdfs(
-                graph, nodes=True, edges=True, fill_edge_geometry=True
-            )
-            return graph, edges.reset_index()
-        except Exception as exc:  # noqa: BLE001 — try the next Overpass mirror
-            last_exc = exc
-    raise RuntimeError(
-        f"OSM Overpass failed for bbox {bbox}: {type(last_exc).__name__}: {last_exc}"
-    ) from last_exc
+            graph = ox.graph_from_bbox((west, south, east, north), network_type="drive", simplify=True)
+        except TypeError:  # osmnx 1.x signature
+            graph = ox.graph_from_bbox(north, south, east, west, network_type="drive", simplify=True)
+        _nodes, edges = ox.graph_to_gdfs(graph, nodes=True, edges=True, fill_edge_geometry=True)
+        return graph, edges.reset_index()
+
+    graph, edges = overpass_call(_download, "roads")
+    graph.graph["source"] = "OSM live (Overpass)"
+    return graph, edges
 
 
 def empty_road_stats() -> dict[str, Any]:
@@ -173,7 +343,9 @@ def classify_roads_with_flood(
     if edges is None or graph is None:
         graph, edges = fetch_osm_drive_edges(bounds)
 
-    roads_nztm = edges.to_crs(NZTM).copy()
+    # Local UTM zone: NZTM2000 only suits NZ; UTM works for the Pacific too.
+    metric_crs = edges.estimate_utm_crs() or NZTM
+    roads_nztm = edges.to_crs(metric_crs).copy()
     if "name" in roads_nztm.columns:
         roads_nztm["name"] = roads_nztm["name"].map(lambda v: _tag_str(v, "(unnamed)"))
     else:
@@ -199,7 +371,7 @@ def classify_roads_with_flood(
         flooded_len = pd.Series(0.0, index=ground.index)
         flooded_area = pd.Series(0.0, index=ground.index)
     else:
-        flood_geom = flood.to_crs(NZTM).geometry
+        flood_geom = flood.to_crs(metric_crs).geometry
         flood_union = (
             flood_geom.union_all() if hasattr(flood_geom, "union_all") else unary_union(flood_geom)
         )
@@ -327,7 +499,7 @@ def draw_roads_panel(
         west, south, east, north = bounds
     if flood is not None and not flood.empty:
         flood.to_crs(WGS84).plot(
-            ax=ax, facecolor=FLOOD_COLOR, edgecolor="none", alpha=0.45, zorder=1
+            ax=ax, facecolor=FLOOD_COLOR, edgecolor="none", zorder=1
         )
     n_open = 0
     if roads_open is not None and not roads_open.empty:
@@ -353,7 +525,7 @@ def draw_roads_panel(
     )
     ax.legend(
         handles=[
-            Patch(facecolor=FLOOD_COLOR, edgecolor="0.2", linewidth=0.4, label="Final flood"),
+            Patch(facecolor=FLOOD_COLOR, edgecolor="0.2", linewidth=0.4, label=FLOOD_LABEL),
             Line2D([0], [0], color=CLOSED_COLOR, linewidth=2.2, label="Flood affected road"),
             Line2D([0], [0], color=OPEN_COLOR, linewidth=1.4, label="Not flood affected road"),
         ],

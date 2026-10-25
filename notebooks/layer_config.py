@@ -53,9 +53,11 @@ AOI_BOUNDS = aoi_bounds()
 
 
 SLOPE_MAX_DEG = 10                # exclude steep terrain: flood-implausible, layover/shadow-prone
-ELEVATION_MAX_M = 25.0            # exclude pixels at/above this DEM height (metres)
+# Absolute cap off by default (9000 m > any terrain); a fixed 25 m suited coastal
+# AOIs only and removed real flooding inland. The relative cap below still applies.
+ELEVATION_MAX_M = 9000.0          # exclude pixels at/above this DEM height (metres)
 # Extra relative cap: also drop if elevation > (AOI 5th-percentile DEM + this).
-# Set to None to use only ELEVATION_MAX_M.
+# Keep this set: with ELEVATION_MAX_M at 9000 it is the only elevation limit.
 ELEVATION_ABOVE_P5_M = 20.0
 PERMANENT_WATER_OCCURRENCE = 50   # JRC Global Surface Water % occurrence -> "permanent" water
 MMU_PIXELS = 8                    # minimum mapping unit, connected pixels at WORKING_SCALE
@@ -64,6 +66,10 @@ SENTINEL1_ENL = 4.9                # equivalent number of looks, IW GRD (for Lee
 # Dual-pol water index WI = VV_dB + VH_dB. Used with Otsu: a pixel is water only
 # if WI < Otsu(WI) AND WI < this cap. Do not lower this just to drop runways.
 WATER_INDEX_MAX_DB = -32.0
+# Keep only the relative orbit + pass of the scene closest to FLOOD_PEAK_DATE for
+# both the event and historical stacks, so ΔWI compares one viewing geometry.
+# False = mix all tracks (the earlier behaviour).
+MATCH_ORBIT = True
 # Mean WI over this many years ending at START_DATE (event window excluded).
 HIST_LOOKBACK_YEARS = 1.0
 # Flood-change cut: event WI must be at least this many dB below the historical
@@ -76,6 +82,11 @@ EXCLUDE_WORLDCOVER_CLASSES = ()
 
 # LINZ NZ Building Outlines (local download; shapefile sidecars are gitignored).
 BUILDING_OUTLINES_PATH = "data/nz-building/nz-building-outlines.shp"
+# For all of NZ export the whole LINZ layer as GeoPackage to
+# data/nz-building/nz-building-outlines.gpkg (found automatically; WGS84 or NZTM2000).
+# "auto" = LINZ if the file above exists, else OpenStreetMap buildings (global).
+# "linz" | "osm" | "none" force one source or switch building exposure off.
+BUILDING_SOURCE = "auto"
 
 # UI always shows the figure and Key Flood Statistics.
 # Extra Gemini HTML sections (notebook report + UI below the stats table):

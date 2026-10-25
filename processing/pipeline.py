@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import io
 import math
+import os
 import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -46,7 +47,6 @@ WC_CLASSES: list[tuple[int, str, str]] = [
     (95, "Mangroves", "#00cf75"),
     (100, "Moss / lichen", "#fae6a0"),
 ]
-FLOOD_COLOR = "#ffff00"
 
 import ee
 import matplotlib
@@ -64,10 +64,12 @@ from processing.buildings import (
     draw_buildings_panel,
     fc_payload_to_gdf,
     intersect_buildings_with_flood,
-    load_buildings_in_bounds,
-    resolve_building_path,
+    load_buildings,
 )
-from processing.roads import classify_roads_with_flood, draw_roads_panel, fetch_osm_drive_edges
+from processing.roads import classify_roads_with_flood, draw_roads_panel, fetch_osm_drive_edges, short_osm_error
+from processing.s1_tracks import choose_track, filter_track
+from processing.s1_preprocess import composite_db, terrain_geometry
+from processing.map_furniture import FLOOD_COLOR, FLOOD_LABEL, add_north_arrow, add_scale_bar
 
 
 def _report_section_flags() -> tuple[bool, bool, bool, bool]:
@@ -146,33 +148,7 @@ def ensure_ee() -> None:
     _ee_ready = True
 
 
-def to_natural(img: ee.Image) -> ee.Image:
-    return ee.Image(10.0).pow(img.divide(10.0))
-
-
-def to_db(img: ee.Image) -> ee.Image:
-    return img.max(1e-10).log10().multiply(10.0)
-
-
-def lee_filter_band(band_img: ee.Image, radius: int = 1, enl: float = cfg.SENTINEL1_ENL) -> ee.Image:
-    names = band_img.bandNames()
-    kernel = ee.Kernel.square(radius=radius, units="pixels")
-    mean = band_img.reduceNeighborhood(ee.Reducer.mean(), kernel).rename(names)
-    variance = band_img.reduceNeighborhood(ee.Reducer.variance(), kernel).rename(names)
-    ci = variance.sqrt().divide(mean.max(1e-6))
-    cu = enl ** -0.5
-    weight = (
-        ee.Image(1)
-        .subtract(ee.Image(cu * cu).divide(ci.multiply(ci).max(1e-6)))
-        .clamp(0, 1)
-    )
-    return mean.add(weight.multiply(band_img.subtract(mean)))
-
-
-def lee_filter(image: ee.Image, radius: int = 1, enl: float = cfg.SENTINEL1_ENL) -> ee.Image:
-    return ee.Image.cat(
-        [lee_filter_band(image.select([b]), radius, enl).rename(b) for b in ["VV", "VH"]]
-    )
+# dB/linear conversion, Lee filter and terrain flattening: processing/s1_preprocess.py
 
 
 def _fc_props_to_array(fc: ee.FeatureCollection, props: list[str], chunk: int) -> np.ndarray:
@@ -211,7 +187,7 @@ def _gmm_component_table(
 
 
 def _pick_flood_component(table: list[dict[str, float]]) -> int:
-    """Flood = darkest (low WI) among components that darkened vs history."""
+    """Flood = highest score (ΔWI/σ − WI_z) among components that darkened vs history."""
     changed = [i for i, row in enumerate(table) if row["dwi_mean_db"] > 0]
     pool = changed if changed else range(len(table))
     return max(pool, key=lambda i: table[i]["score"])
@@ -228,7 +204,7 @@ def fit_gmm_flood_cluster(
 
     Matches notebooks/01_sentinel1_layer.ipynb section 3. Replaces a fixed
     Otsu threshold + WI_CHANGE_MIN_DB cut: the flood component is named by
-    physics (lowest WI among components with positive mean ΔWI), not a
+    physics (highest ΔWI/σ − WI_z among components with positive mean ΔWI), not a
     hand-set dB cutoff. WorldCover/JRC/DEM stay out of the feature vector —
     they are post-processing masks applied by the caller, same as before.
 
@@ -361,95 +337,6 @@ def _worldcover_rgb(worldcover: ee.Image) -> ee.Image:
     return indexed.visualize(min=0, max=len(codes) - 1, palette=palette)
 
 
-def _nice_scale_km(width_km: float) -> float:
-    target = max(width_km * 0.22, 0.5)
-    candidates = (0.5, 1, 2, 5, 10, 20, 50)
-    chosen = candidates[0]
-    for value in candidates:
-        if value <= target:
-            chosen = value
-    return chosen
-
-
-def _add_scale_bar(ax, width_km: float) -> None:
-    """Draw a scale bar in the lower-left using image pixel coordinates."""
-    import matplotlib.patheffects as pe
-    from matplotlib.patches import Rectangle
-
-    img = ax.get_images()[0]
-    height_px, width_px = img.get_array().shape[:2]
-    scale_km = _nice_scale_km(width_km)
-    bar_px = scale_km / width_km * width_px
-    # imshow puts row 0 at the top, so "lower" means a large y value.
-    bar_h = max(height_px * 0.012, 4)
-    x0, y0 = width_px * 0.06, height_px * 0.92 - bar_h
-    ax.add_patch(
-        Rectangle(
-            (x0, y0),
-            bar_px,
-            bar_h,
-            transform=ax.transData,
-            facecolor="white",
-            edgecolor="black",
-            linewidth=1.4,
-            zorder=5,
-        )
-    )
-    ax.text(
-        x0 + bar_px / 2,
-        y0 - height_px * 0.01,
-        f"{scale_km:g} km",
-        ha="center",
-        va="bottom",
-        fontsize=8,
-        color="white",
-        zorder=6,
-        path_effects=[pe.withStroke(linewidth=3, foreground="black")],
-    )
-
-
-def _add_north_arrow(ax) -> None:
-    """White north arrow with a black halo so it reads on dark SAR."""
-    import matplotlib.patheffects as pe
-
-    halo = [pe.withStroke(linewidth=3.5, foreground="black")]
-    ax.annotate(
-        "N",
-        xy=(0.93, 0.92),
-        xytext=(0.93, 0.76),
-        xycoords="axes fraction",
-        textcoords="axes fraction",
-        ha="center",
-        va="center",
-        fontsize=10,
-        fontweight="bold",
-        color="white",
-        path_effects=halo,
-        arrowprops=dict(
-            arrowstyle="-|>",
-            color="white",
-            lw=2.2,
-            mutation_scale=14,
-        ),
-        zorder=6,
-    )
-    # Outline the arrow shaft (annotate arrowprops ignore path_effects).
-    ax.annotate(
-        "",
-        xy=(0.93, 0.92),
-        xytext=(0.93, 0.76),
-        xycoords="axes fraction",
-        textcoords="axes fraction",
-        arrowprops=dict(
-            arrowstyle="-|>",
-            color="black",
-            lw=4.2,
-            mutation_scale=16,
-        ),
-        zorder=5,
-    )
-
-
 def _add_landcover_legend(ax) -> None:
     from matplotlib.patches import Patch
 
@@ -458,7 +345,7 @@ def _add_landcover_legend(ax) -> None:
         for _, label, color in WC_CLASSES
     ]
     handles.append(
-        Patch(facecolor=FLOOD_COLOR, edgecolor="0.2", linewidth=0.4, label="Final flood")
+        Patch(facecolor=FLOOD_COLOR, edgecolor="0.2", linewidth=0.4, label=FLOOD_LABEL)
     )
     ax.legend(
         handles=handles,
@@ -472,10 +359,19 @@ def _add_landcover_legend(ax) -> None:
 
 
 def _ee_thumb_array(image: ee.Image, vis: dict | None, region: ee.Geometry, dimensions: int) -> np.ndarray:
+    """EE thumbnail as an array; halves the size if EE refuses (time/memory limits)."""
+    from urllib.error import HTTPError
+
     vis_img = image if vis is None else image.visualize(**vis)
-    url = vis_img.getThumbURL({"region": region, "dimensions": dimensions, "format": "png"})
-    with urlopen(url) as resp:
-        return np.array(Image.open(io.BytesIO(resp.read())))
+    last: Exception | None = None
+    for dims in (dimensions, max(dimensions // 2, 256)):
+        url = vis_img.getThumbURL({"region": region, "dimensions": dims, "format": "png", "crs": "EPSG:4326"})
+        try:
+            with urlopen(url) as resp:
+                return np.array(Image.open(io.BytesIO(resp.read())))
+        except HTTPError as err:
+            last = RuntimeError(f"Earth Engine thumbnail refused ({err.code}): {err.read().decode(errors='ignore')[:300]}")
+    raise last  # type: ignore[misc]
 
 
 def _add_flood_legend(ax) -> None:
@@ -483,7 +379,7 @@ def _add_flood_legend(ax) -> None:
 
     ax.legend(
         handles=[
-            Patch(facecolor=FLOOD_COLOR, edgecolor="0.2", linewidth=0.4, label="Final flood"),
+            Patch(facecolor=FLOOD_COLOR, edgecolor="0.2", linewidth=0.4, label=FLOOD_LABEL),
         ],
         loc="lower right",
         fontsize=8,
@@ -529,6 +425,8 @@ def _figure_png_b64(
     bounds: list[float] | None = None,
     flood_gdf=None,
     buildings_aoi=None,
+    buildings_source: str = "LINZ",
+    buildings_note: str | None = None,
     buildings_affected=None,
     n_buildings_affected: int | None = None,
     roads_open=None,
@@ -539,38 +437,66 @@ def _figure_png_b64(
     import base64
 
     s1_when = s1_index_datetime(closest_id)
-    flood_fill = final_flood.selfMask().visualize(palette=[FLOOD_COLOR], opacity=0.55)
+    flood_fill = final_flood.selfMask().visualize(palette=[FLOOD_COLOR])  # opaque: legend matches
     left_img = co_db.select("VV").visualize(**VV_VIS)
     right_img = water_index.visualize(**WI_VIS).blend(flood_fill)
     left = _ee_thumb_array(left_img, None, aoi, cfg.THUMB_DIMENSIONS)
     right = _ee_thumb_array(right_img, None, aoi, cfg.THUMB_DIMENSIONS)
 
-    fig, axes = plt.subplots(2, 2, figsize=(13.5, 13.5))
-    axes[0][0].imshow(left)
+    w, s, e, n = bounds if bounds is not None else (0.0, 0.0, 1.0, 1.0)
+    lat0 = (s + n) / 2.0
+    # Same lon/lat frame and true ground aspect on all four panels, so they line up.
+    geo_aspect = 1.0 / max(math.cos(math.radians(lat0)), 1e-6)
+    ground_ratio = ((e - w) * math.cos(math.radians(lat0))) / max(n - s, 1e-9)  # width / height on the ground
+    ground_ratio = min(max(ground_ratio, 0.5), 2.5)
+    panel_w = 6.4
+    fig_h = 2 * (panel_w / ground_ratio + 1.0) + 1.6  # two map rows + their titles + suptitle/caption
+    fig, axes = plt.subplots(2, 2, figsize=(13.5, fig_h), layout="constrained")
+    fig.get_layout_engine().set(rect=(0, 0.07, 1, 0.93), h_pad=0.12, hspace=0.06)
+
+    def _frame(ax) -> None:
+        ax.set_xlim(w, e)
+        ax.set_ylim(s, n)
+        ax.set_aspect(geo_aspect, adjustable="box")
+
+    axes[0][0].imshow(left, extent=(w, e, s, n), interpolation="nearest")
+    axes[0][1].imshow(right, extent=(w, e, s, n), interpolation="nearest")
+    for ax in (axes[0][0], axes[0][1]):
+        _frame(ax)
     axes[0][0].set_title(f"Sentinel-1 VV (dB)\nS1 closest to peak: {s1_when}")
-    axes[0][1].imshow(right)
-    axes[0][1].set_title(f"Water index (VV+VH) + final flood\nS1 closest to peak: {s1_when}")
+    axes[0][1].set_title(f"Water index (VV+VH) + flood extent\nS1 closest to peak: {s1_when}")
     axes[0][0].set_axis_off()
     axes[0][1].set_axis_off()
-    _add_scale_bar(axes[0][0], width_km)
-    _add_north_arrow(axes[0][0])
+    km_per_deg_lon = 111.32 * math.cos(math.radians(lat0))
+    for ax in (axes[0][0], axes[0][1]):
+        add_scale_bar(ax, km_per_deg_lon)
+        add_north_arrow(ax)
     _add_flood_legend(axes[0][1])
     bldg_bounds = bounds or _wgs84_bounds(flood_gdf, buildings_aoi, buildings_affected)
     has_buildings = (buildings_aoi is not None and not buildings_aoi.empty) or (
         buildings_affected is not None and not buildings_affected.empty
     )
     has_flood = flood_gdf is not None and not flood_gdf.empty
-    if bldg_bounds is not None and (has_buildings or has_flood):
+    if buildings_aoi is None:
+        axes[1][0].set_axis_off()
+        axes[1][0].text(
+            0.5, 0.5,
+            buildings_note or "Building outlines not loaded",
+            wrap=True,
+            ha="center", va="center",
+        )
+    elif bldg_bounds is not None and (has_buildings or has_flood):
         draw_buildings_panel(
             axes[1][0],
             bldg_bounds,
             flood_gdf,
             buildings_aoi,
             buildings_affected,
+            source_label=buildings_source,
         )
     else:
         axes[1][0].set_axis_off()
-        axes[1][0].text(0.5, 0.5, "LINZ buildings not available", ha="center", va="center")
+        axes[1][0].text(0.5, 0.5, f"{buildings_source} buildings not available", ha="center", va="center")
     road_bounds = bounds or _wgs84_bounds(flood_gdf, roads_open, roads_closed)
     has_roads = (roads_open is not None and not roads_open.empty) or (
         roads_closed is not None and not roads_closed.empty
@@ -598,6 +524,9 @@ def _figure_png_b64(
     else:
         axes[1][1].set_axis_off()
         axes[1][1].text(0.5, 0.5, "OSM roads not available", ha="center", va="center")
+    for ax in (axes[1][0], axes[1][1]):
+        if ax.axison or ax.collections or ax.lines:
+            _frame(ax)
     center_str = f"[{center[0]:.4f}, {center[1]:.4f}]"
     fig.suptitle(
         f"{center_str}  |  ±{width_km / 2:.1f} km  |  {start} → {end}\n"
@@ -608,7 +537,7 @@ def _figure_png_b64(
     urban_pct = 100 * flooded_urban_km2 / flood_km2 if flood_km2 else 0.0
     extra = ""
     if n_buildings_affected is not None:
-        extra += f" LINZ buildings intersecting flood: {n_buildings_affected:,}."
+        extra += f" {buildings_source} buildings intersecting flood: {n_buildings_affected:,}."
     if road_error:
         extra += f" OSM roads not available: {road_error}"
     else:
@@ -618,16 +547,15 @@ def _figure_png_b64(
     fig.text(
         0.5,
         0.01,
-        f"Figure: Final flood extent (yellow) = {flood_km2 * 1e6:,.0f} m² "
+        f"Figure: Flood extent (olive) = {flood_km2 * 1e6:,.0f} m² "
         f"({flood_km2:,.2f} km², {pct:.1f}% of the {aoi_km2:,.1f} km² AOI). "
         f"Urban flooded: {flooded_urban_km2:,.2f} km² ({urban_pct:.1f}% of the flood)."
-        f"{extra}",
+        f"{extra} Roads{' and buildings' if buildings_source == 'OSM' else ''} © OpenStreetMap contributors (ODbL).",
         ha="center",
         va="bottom",
         fontsize=11,
         wrap=True,
     )
-    fig.tight_layout(rect=(0, 0.05, 1, 0.95))
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=120, bbox_inches="tight")
     plt.close(fig)
@@ -667,7 +595,6 @@ def run_flood_mapping(
                 .filterBounds(aoi)
                 .filterDate(start_d, end_d)
                 .filter(ee.Filter.eq("instrumentMode", "IW"))
-                # .filter(ee.Filter.eq("orbitProperties_pass", "DESCENDING"))
                 .filter(ee.Filter.eq("resolution_meters", 10))
                 .select(["VV", "VH", "angle"])
             )
@@ -678,15 +605,24 @@ def run_flood_mapping(
         if n_co <= 0:
             raise ValueError("No Sentinel-1 scenes for this AOI and date range.")
 
-        peak_ee = ee.Date(peak)
-        co_with_diff = co_col.map(
-            lambda img: img.set(
-                "peak_diff_days", ee.Number(img.date().difference(peak_ee, "day")).abs()
-            )
-        )
-        closest = ee.Image(co_with_diff.sort("peak_diff_days").first())
-        closest_id = closest.get("system:index").getInfo()
-        peak_diff = float(closest.get("peak_diff_days").getInfo())
+        # One orbit track: must cover >=95% of the AOI, then closest to the peak.
+        # Mixed tracks only if none covers the AOI (or MATCH_ORBIT is off).
+        track = choose_track(co_col, aoi, peak, match=bool(cfg.MATCH_ORBIT))
+        closest_id = track["closest_id"]
+        peak_diff = float(track["peak_diff_days"])
+        rel_orbit, orbit_pass = track["rel_orbit"], track["orbit_pass"]
+
+        def same_track(col: ee.ImageCollection) -> ee.ImageCollection:
+            return filter_track(col, track)
+
+        co_col = same_track(co_col)
+        if track["matched"]:
+            # Event image = the single pass nearest the peak (all its slices), not an
+            # average of every pass in the window, which would dilute the flood with
+            # earlier or later (drained) acquisitions.
+            t_peak = ee.Image(co_col.filter(ee.Filter.eq("system:index", closest_id)).first()).date()
+            co_col = co_col.filterDate(t_peak.advance(-1, "hour"), t_peak.advance(1, "hour"))
+        n_co = int(co_col.size().getInfo())
 
         def mask_s2_clouds(image: ee.Image) -> ee.Image:
             qa = image.select("QA60")
@@ -724,18 +660,16 @@ def run_flood_mapping(
         ocean_no_dem = dem.mask().Not().unmask(1)
         permanent_water = gsw_permanent.Or(wc_water).Or(ocean_no_dem).rename("permanent_water")
 
-        slope_rad = slope_deg.multiply(3.141592653589793 / 180.0)
-        terrain_gain = slope_rad.cos().max(0.1).unmask(1)
+        # Per scene: Lee filter + angular terrain flattening (Vollrath et al. 2020,
+        # volume model, with geometric layover/shadow mask); then per-pixel median.
+        # processing/s1_preprocess.py, shared with notebooks 01 and 04.
+        tf_slope, tf_phi_s = terrain_geometry(aoi)
 
         def build_composite(col: ee.ImageCollection) -> ee.Image:
-            natural_mean = to_natural(col.select(["VV", "VH"]).mean()).clip(aoi)
-            filtered = lee_filter(natural_mean)
-            flattened = filtered.divide(terrain_gain)
-            return to_db(flattened).rename(["VV", "VH"])
+            return composite_db(col, aoi, tf_slope, tf_phi_s, enl=cfg.SENTINEL1_ENL)
 
-        report(5, "Lee speckle filter and terrain flattening")
+        report(5, "Per-scene Lee filter and terrain flattening")
         co_db = build_composite(co_col)
-        co_angle = co_col.select("angle").mean().clip(aoi)
 
         water_index = co_db.select("VV").add(co_db.select("VH")).rename("WI")
 
@@ -743,7 +677,7 @@ def run_flood_mapping(
         hist_start = (
             date.fromisoformat(start) - timedelta(days=int(round(365.25 * cfg.HIST_LOOKBACK_YEARS)))
         ).isoformat()
-        hist_col = s1_iw_vv_vh_angle(hist_start, hist_end)
+        hist_col = same_track(s1_iw_vv_vh_angle(hist_start, hist_end))
         n_hist = int(hist_col.size().getInfo())
         if n_hist <= 0:
             raise ValueError(
@@ -783,9 +717,9 @@ def run_flood_mapping(
             elev_ok = elev_ok.And(dem.lte(rel_max).unmask(1)).rename("elev_ok")
 
         slope_ok = slope_deg.lt(req.slope_max_deg).unmask(1).rename("slope_ok")
-        layover_risk = slope_deg.gt(co_angle)
-        shadow_risk = slope_deg.gt(ee.Image(90).subtract(co_angle))
-        layover_shadow_risk = layover_risk.Or(shadow_risk).unmask(0).rename("layover_shadow_risk")
+        # Active layover/shadow from the terrain-flattening geometry: those pixels are
+        # masked in the composite, so treat "no data" as excluded.
+        layover_shadow_risk = co_db.select("VV").mask().Not().rename("layover_shadow_risk")
         flood_masked = (
             flood_candidate.And(elev_ok).And(slope_ok).And(layover_shadow_risk.Not()).rename("flood_masked")
         )
@@ -821,12 +755,8 @@ def run_flood_mapping(
             bestEffort=True,
             maxPixels=1e9,
         )
-        bldg_path = resolve_building_path(cfg.BUILDING_OUTLINES_PATH)
-
         def _load_buildings():
-            if bldg_path is None:
-                return None
-            return load_buildings_in_bounds(bldg_path, bounds)
+            return load_buildings(bounds, cfg.BUILDING_OUTLINES_PATH, cfg.BUILDING_SOURCE)
 
         with ThreadPoolExecutor(max_workers=4) as pool:
             osm_fut = pool.submit(fetch_osm_drive_edges, bounds)
@@ -846,7 +776,8 @@ def run_flood_mapping(
                 100 * stats["flood_final_km2"] / stats["aoi_km2"] if stats["aoi_km2"] else 0.0
             )
 
-            buildings_aoi = bldg_fut.result()
+            buildings_aoi, buildings_source, buildings_note = bldg_fut.result()
+            stats["buildings_source"] = buildings_source
             buildings_affected = None
             if buildings_aoi is not None:
                 buildings_affected, bldg_stats = intersect_buildings_with_flood(
@@ -858,14 +789,17 @@ def run_flood_mapping(
             roads_open = None
             road_stats: dict[str, Any] | None = None
             meta_road_error = None
+            meta_road_error_detail = None
             try:
                 osm_graph, osm_edges = osm_fut.result()
+                stats["roads_source"] = osm_graph.graph.get("source", "OSM")
                 _ground, roads_closed, roads_open, road_stats = classify_roads_with_flood(
                     bounds, flood_gdf, graph=osm_graph, edges=osm_edges
                 )
                 stats.update(road_stats)
             except Exception as road_exc:  # noqa: BLE001 — OSM/Overpass must not fail the flood run
-                meta_road_error = f"{type(road_exc).__name__}: {road_exc}"
+                meta_road_error_detail = f"{type(road_exc).__name__}: {road_exc}"
+                meta_road_error = short_osm_error(meta_road_error_detail)
                 roads_closed = None
                 roads_open = None
                 road_stats = None
@@ -890,6 +824,8 @@ def run_flood_mapping(
             bounds=bounds,
             flood_gdf=flood_gdf,
             buildings_aoi=buildings_aoi,
+            buildings_source=buildings_source,
+            buildings_note=buildings_note,
             buildings_affected=buildings_affected,
             n_buildings_affected=stats.get("buildings_affected"),
             roads_open=roads_open,
@@ -905,6 +841,12 @@ def run_flood_mapping(
             "end_date": end,
             "peak_date": peak,
             "s1_scenes": n_co,
+            "s1_relative_orbit": rel_orbit,
+            "s1_orbit_pass": orbit_pass,
+            "match_orbit": bool(cfg.MATCH_ORBIT),
+            "track_matched": track["matched"],
+            "track_coverage_of_aoi": track["coverage"],
+            "track_message": track["message"],
             "s1_hist_scenes": n_hist,
             "s1_hist_start": hist_start,
             "s1_hist_end": hist_end,
@@ -921,21 +863,29 @@ def run_flood_mapping(
             "elevation_max_m": req.elevation_max_m,
             "notebook_equivalent": "notebooks/01_sentinel1_layer.ipynb",
             "osm_road_error": meta_road_error,
+            "osm_road_error_detail": meta_road_error_detail,
+            "buildings_note": buildings_note,
         }
         html_report = None
         analysis, implications, uncertainties, conclusion = _report_section_flags()
-        if analysis or implications or uncertainties or conclusion:
+        has_key = bool((os.environ.get("GEMINI_KEY") or os.environ.get("GOOGLE_API_KEY") or "").strip())
+        if (analysis or implications or uncertainties or conclusion) and not has_key:
+            meta["llm_report_skipped"] = "No GEMINI_KEY in .env; AI summary skipped."
+        elif analysis or implications or uncertainties or conclusion:
             from llm.report import generate_flood_report
 
-            html_report = generate_flood_report(
-                stats,
-                figure_b64,
-                meta,
-                include_analysis=analysis,
-                include_implications=implications,
-                include_uncertainties=uncertainties,
-                include_conclusion=conclusion,
-            )
+            try:
+                html_report = generate_flood_report(
+                    stats,
+                    figure_b64,
+                    meta,
+                    include_analysis=analysis,
+                    include_implications=implications,
+                    include_uncertainties=uncertainties,
+                    include_conclusion=conclusion,
+                )
+            except Exception as llm_exc:  # noqa: BLE001 — the AI summary must not fail the flood run
+                meta["llm_report_skipped"] = f"{type(llm_exc).__name__}: {llm_exc}"
         return FloodRunResult(
             ok=True, stats=stats, figure_png_base64=figure_b64, meta=meta, report=html_report
         )
