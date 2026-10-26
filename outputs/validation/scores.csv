@@ -1,8 +1,9 @@
 ,0
-S1 flood (km²),20.158
+S1 flood (km²),12.52
 Reference flood (km²),21.448
-Precision,0.878
-Recall,0.825
-F1,0.85
-IoU,0.74
-Overall accuracy,0.932
+Precision,0.967
+Recall,0.564
+F1,0.713
+IoU,0.554
+Overall accuracy,0.894
+Cohen's kappa,0.653
