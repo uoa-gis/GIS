@@ -1,0 +1,5 @@
+Method,Flood mapped (km²),Precision,Recall,F1,IoU,Cohen's kappa,Overall accuracy,Urban recall
+"GMM, cluster only",12.76,0.962,0.572,0.717,0.559,0.658,0.895,0.001
+GMM + post-masks (final),12.52,0.967,0.564,0.713,0.554,0.653,0.894,0.001
+"k-means, cluster only",12.699,0.973,0.576,0.724,0.567,0.666,0.897,0.001
+k-means + post-masks,12.479,0.977,0.569,0.719,0.561,0.661,0.896,0.001
