@@ -1,0 +1,3 @@
+Method,Area scored (km²),Flood mapped (km²),Reference flood (km²),Precision,Recall,F1,IoU,Cohen's kappa,Overall accuracy,Urban recall
+"S2 U-Net, whole AOI",91.919,30.925,21.397,0.503,0.727,0.594,0.423,0.44,0.769,0.191
+"S2 U-Net, clear sky only",51.503,26.269,14.48,0.515,0.934,0.664,0.497,0.473,0.734,0.655
