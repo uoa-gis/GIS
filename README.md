@@ -1,4 +1,4 @@
-# ![Geographically Informed Speculators logo](assets/logo/logo.png) Geographically Informed Speculators (GIS)
+# <img src="assets/logo/logo.png" alt="Geographically Informed Speculators logo" width="70" align="absmiddle"> Geographically Informed Speculators (GIS)
 
 GEOG761 group project (University of Auckland). We map **flood and inundation extent** from Sentinel-1 radar after a disaster, then count the buildings and roads affected. This is the first step in choosing a site for sea-based logistics during humanitarian assistance and disaster relief (HA/DR). The test case is **Cyclone Gabrielle** on the Napier–Hastings floodplain, February 2023.
 

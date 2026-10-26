@@ -65,7 +65,7 @@ Region: New Zealand
 
 Category: Building Outlines
 
-CRS: WGS 84
+CRS: NZGD2000 / New Zealand Transverse Mercator 2000
 
 ------------------------------------------------------------------------
  Processing steps applied by LINZ Data Service
@@ -73,9 +73,8 @@ CRS: WGS 84
 
 - imported to LINZ Data Service in Postgres format on 08 May 2019
 - updated with new data on 18 May 2026
-- reprojected from NZGD2000 / New Zealand Transverse Mercator 2000 to WGS 84
-- clipped to (38.845°S 175.944°E)-(40.290°S 178.014°E)
-- converted by LINZ Data Service to Shapefile on 05 Oct 2026 (reference #4670314)
+- clipped to (38.584°S 176.043°E)-(40.493°S 178.263°E)
+- converted by LINZ Data Service to Shapefile on 26 Oct 2026 (reference #4693618)
 
 ------------------------------------------------------------------------
  LICENSE: Creative Commons Attribution 4.0 International
