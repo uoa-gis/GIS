@@ -1,0 +1,10 @@
+Method,Flood mapped (km²),Precision,Recall,F1,IoU,Cohen's kappa,Overall accuracy,Urban recall
+"GMM, cluster only",12.732,0.697,0.829,0.758,0.61,0.725,0.943,
+GMM + post-masks (final),12.37,0.701,0.811,0.752,0.603,0.719,0.942,
+"k-means, cluster only",9.323,0.726,0.632,0.676,0.511,0.64,0.935,
+k-means + post-masks,9.058,0.726,0.615,0.666,0.499,0.629,0.933,
+S1 Otsu threshold baseline (no learning),13.995,0.668,0.874,0.757,0.609,0.723,0.94,
+"S1 random forest, spatial CV (supervised)",10.686,0.729,0.728,0.728,0.573,0.695,0.941,
+S1 random forest + post-masks,10.444,0.734,0.716,0.725,0.569,0.692,0.941,
+"S1 random forest, trained on main AOI (transfer)",11.572,0.721,0.78,0.75,0.6,0.718,0.944,
+"S1 random forest, transfer + post-masks",11.217,0.726,0.761,0.743,0.592,0.711,0.943,
