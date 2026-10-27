@@ -1,0 +1,4 @@
+Method,Area scored (km²),Flood mapped (km²),Reference flood (km²),Precision,Recall,F1,IoU,Cohen's kappa,Overall accuracy,Urban recall
+S1 GMM (30 m grid),91.919,11.879,21.397,0.971,0.539,0.693,0.531,0.632,0.889,0.0
+"S2 U-Net, clear sky detections",91.919,26.269,21.397,0.515,0.632,0.568,0.396,0.418,0.776,0.188
+Fusion: S1 + clear-sky S2,91.919,30.253,21.397,0.575,0.813,0.674,0.508,0.552,0.817,0.188
