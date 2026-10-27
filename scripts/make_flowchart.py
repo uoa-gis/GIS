@@ -9,9 +9,9 @@ from matplotlib.patches import FancyBboxPatch
 
 C = {"in": ("#e8eef6", "#4a6fa5"), "pre": ("#eef4e4", "#6b8e23"), "cl": ("#f6f0dc", "#b8860b"),
      "pm": ("#f3e6ea", "#a0526d"), "out": ("#ececec", "#555555"), "fin": ("#93a532", "#5c6b1e")}
-W, H = 130, 124
+W, H = 130, 138
 fig, ax = plt.subplots(figsize=(11, 11 * H / W))
-ax.set_xlim(0, W); ax.set_ylim(0, H); ax.axis("off")
+ax.set_xlim(0, W); ax.set_ylim(-14, 124); ax.axis("off")
 fig.canvas.draw(); R = fig.canvas.get_renderer()
 
 def box(x, y, text, kind, fs=9.5, bold=False, minw=0, round_=0.9):
@@ -64,6 +64,7 @@ vec = box(116, 22, "LINZ building outlines\nOSM road network", "in", fs=9)
 acc = box(44, 10, "Accuracy assessment\nprecision, recall, F1, IoU, kappa", "out", fs=9, minw=30)
 s2 = box(76, 10, "Sentinel-2 U-Net\noptical cross-check", "out", fs=9, minw=22)
 exp = box(106, 10, "Exposure\nbuildings, roads, detours", "out", fs=9, minw=26)
+bch = box(44, -6, "Benchmarks scored the same way\nOtsu threshold (no learning)\nrandom forest, 8 features, spatial block CV\ntransfer to a second AOI", "out", fs=9, minw=30)
 
 # Arrows
 arrow(B(s1e), T(trk, -10)); arrow(B(s1h), T(trk, 10))
@@ -81,7 +82,7 @@ arrow(B(mmu), Rt(fin), rad=-0.3)
 arrow(B(fin, -8), T(acc, 4), rad=0.1)
 arrow(B(fin), T(s2, -4), dashed=True)
 arrow(B(fin, 8), T(exp, -4), rad=-0.1)
-arrow(B(ref), T(acc, -10), rad=0.15); arrow(B(vec), T(exp, 8), rad=-0.15)
+arrow(B(ref), T(acc, -10), rad=0.15); arrow(T(bch), B(acc)); arrow(B(vec), T(exp, 8), rad=-0.15)
 
 from pathlib import Path
 out = Path(__file__).resolve().parents[1] / "outputs" / "pipeline_flowchart.png"
