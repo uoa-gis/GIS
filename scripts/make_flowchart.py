@@ -11,7 +11,7 @@ C = {"in": ("#e8eef6", "#4a6fa5"), "pre": ("#eef4e4", "#6b8e23"), "cl": ("#f6f0d
      "pm": ("#f3e6ea", "#a0526d"), "out": ("#ececec", "#555555"), "fin": ("#93a532", "#5c6b1e")}
 W, H = 130, 138
 fig, ax = plt.subplots(figsize=(11, 11 * H / W))
-ax.set_xlim(0, W); ax.set_ylim(-14, 124); ax.axis("off")
+ax.set_xlim(0, W); ax.set_ylim(-14.5, 123.5); ax.axis("off")
 fig.canvas.draw(); R = fig.canvas.get_renderer()
 
 def box(x, y, text, kind, fs=9.5, bold=False, minw=0, round_=0.9):
@@ -34,9 +34,6 @@ def arrow(p, q, dashed=False, rad=0.0):
         arrowstyle="-|>", color="#444444", lw=1.1, shrinkA=1.5, shrinkB=1.5, mutation_scale=11,
         ls=(0, (3, 2)) if dashed else "-", connectionstyle=f"arc3,rad={rad}"))
 
-for y, t in [(116, "Inputs"), (96, "1  Pre-\n    processing"), (69, "2  Flood\n    detection"),
-             (47, "3  Post-masks"), (34, "Product"), (10, "4  Outputs")]:
-    ax.text(1, y, t, ha="left", va="center", fontsize=10.5, fontweight="bold", color="#333333")
 
 # Inputs
 s1e = box(40, 116, "Sentinel-1 GRD (VV, VH)\nevent pass, 14 Feb 2023", "in", minw=28)
@@ -65,6 +62,21 @@ acc = box(44, 10, "Accuracy assessment\nprecision, recall, F1, IoU, kappa", "out
 s2 = box(76, 10, "Sentinel-2 U-Net\noptical cross-check", "out", fs=9, minw=22)
 exp = box(106, 10, "Exposure\nbuildings, roads, detours", "out", fs=9, minw=26)
 bch = box(44, -6, "Benchmarks scored the same way\nOtsu threshold (no learning)\nrandom forest, 8 features, spatial block CV\ntransfer to a second AOI", "out", fs=9, minw=30)
+
+# Stage panels: a light rounded background behind each group of boxes
+def panel(boxes, label, pad=0.8):
+    top = max(b["y"] + b["h"] / 2 for b in boxes) + pad
+    bot = min(b["y"] - b["h"] / 2 for b in boxes) - pad
+    ax.add_patch(FancyBboxPatch((0.3, bot), W - 0.6, top - bot, boxstyle="round,pad=0,rounding_size=1.6",
+                                fc="#f7f7f7", ec="#cfcfcf", lw=0.9, zorder=0))
+    ax.text(1.6, (top + bot) / 2, label, ha="left", va="center", fontsize=10.5, fontweight="bold", color="#333333")
+
+panel([s1e, s1h, anc], "Inputs")
+panel([trk, lee, tfl, med], "1  Pre-\n    processing")
+panel([fea, gmm, km, pck], "2  Flood\n    detection")
+panel([pw, ter, mmu], "3  Post-masks")
+panel([fin], "Product")
+panel([ref, vec, acc, s2, exp, bch], "4  Outputs")
 
 # Arrows
 arrow(B(s1e), T(trk, -10)); arrow(B(s1h), T(trk, 10))
